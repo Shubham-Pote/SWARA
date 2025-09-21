@@ -23,7 +23,7 @@ import SignUp from "./pages/SignUp";
 import NotFound from "./pages/NotFound";
 import StudyHub from './pages/StudyHub';
 import CharacterSelection from './pages/CharacterSelection';
-import CharacterChatInterface from './pages/CharacterChatInterface';
+import CharacterChat from './pages/CharacterChat';
 
 
 const queryClient = new QueryClient();
@@ -34,7 +34,12 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true
+          }}
+        >
           <Routes>
             {/* Public Routes */}
             <Route path="/" element={<Index />} />
@@ -59,7 +64,7 @@ const App = () => (
               <Route path="/goals" element={<Goals />} />
               <Route path="/study-hub" element={<StudyHub />} />
               <Route path="/characters" element={<CharacterSelection />} />
-              <Route path="/character-chat/:characterId" element={<CharacterChatInterface />} />
+              <Route path="/character-chat/:characterId" element={<CharacterChat />} />
             </Route>
             
             {/* Catch-all Route */}

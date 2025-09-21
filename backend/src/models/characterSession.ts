@@ -2,7 +2,7 @@
 import { Schema, model, Types, Document } from "mongoose";
 
 export interface ICharacterSession extends Document {
-  userId: Types.ObjectId;
+  userId: string; // Changed from Types.ObjectId to string for compatibility
   characterId: string; // 'maria' | 'akira'
   language: "es" | "ja" | "mixed";
   personality: string;
@@ -28,7 +28,7 @@ export interface ICharacterSession extends Document {
 
 const characterSessionSchema = new Schema<ICharacterSession>(
   {
-    userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    userId: { type: String, required: true }, // Changed from ObjectId to String
     characterId: { 
       type: String, 
       enum: ["maria", "akira"], 

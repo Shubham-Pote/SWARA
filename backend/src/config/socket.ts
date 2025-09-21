@@ -19,21 +19,24 @@ env.config();
 export function createSocketServer(httpServer: http.Server): Server {
   const ioOptions: Partial<ServerOptions> = {
     cors: {
-      origin: process.env.CORS_ORIGIN?.split(",") ?? "*",
+      origin: "*", // Allow all origins for development
       methods: ["GET", "POST"],
       credentials: true
     },
-    transports: ["websocket", "polling"]
+    transports: ["websocket", "polling"],
+    allowEIO3: true // Allow Engine.IO v3 clients
   };
 
   const io = new Server(httpServer, ioOptions);
 
-  // Global auth gate
-  io.use(socketAuth);                                // ← UPDATED
+  // Temporarily disable auth for debugging
+  // io.use(socketAuth);
 
   io.on("connection", (socket) => {
+    // Set default user for debugging
+    socket.data.user = { userId: 'debug-user-' + Date.now() };
     console.info(
-      `[socket] ${socket.id} connected as ${socket.data.user?.id}`
+      `[socket] ${socket.id} connected as ${socket.data.user?.userId}`
     );
 
     socket.on("disconnect", (reason) => {

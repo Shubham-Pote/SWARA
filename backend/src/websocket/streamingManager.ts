@@ -27,14 +27,17 @@ export class StreamingManager {
     event: string
   ) {
     let lastSent = 0;
+    let accumulatedText = '';
 
     for await (const response of stream) {
-      // Emit the text content
-      socket.emit(event, { 
+      // Emit streaming text for real-time typing effect
+      socket.emit("character_stream", { 
         text: response.text,
-        emotion: response.emotion,
-        languageDetected: response.languageDetected 
+        isComplete: false
       });
+      
+      // Accumulate for final response
+      accumulatedText += response.text;
 
       // Emit animation if present
       if (response.animation) {
@@ -53,5 +56,13 @@ export class StreamingManager {
         lastSent = now;
       }
     }
+    
+    // Send completion signal
+    socket.emit("character_stream", { 
+      text: '',
+      isComplete: true
+    });
+    
+    return accumulatedText;
   }
 }

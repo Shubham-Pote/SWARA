@@ -12,4 +12,22 @@ export class RomajiService {
     }
     return "";
   }
+
+  /**
+   * Converts Japanese text (hiragana, katakana, kanji) to romaji
+   * @param text Japanese text to convert
+   * @returns Romanized version of the text
+   */
+  toRomaji(text: string): string {
+    return wanakana.toRomaji(text);
+  }
+
+  /**
+   * Checks if text contains Japanese characters
+   * @param text Text to check
+   * @returns True if text contains Japanese characters
+   */
+  isJapanese(text: string): boolean {
+    return wanakana.isJapanese(text);
+  }
 }

@@ -36,15 +36,21 @@ export class ConversationManager {
     return session.language;
   }
 
+  async switchCharacter(userId: string, characterId: 'maria' | 'akira') {
+    const session = await this.getOrCreateSession(userId);
+    session.characterId = characterId;
+    // Also update language based on character
+    session.language = characterId === 'akira' ? 'ja' : 'es';
+    await session.save();
+    return { characterId: session.characterId, language: session.language };
+  }
+
   async endSession(userId: string) {
     await CharacterSession.deleteMany({ userId: userId });
   }
 
   async getCurrentSession(userId: string) {
-    return await CharacterSession.findOne({ 
-      userId: userId, 
-      isActive: true 
-    }).sort({ startTime: -1 });
+    return await this.getOrCreateSession(userId);
   }
 
   /* -------------------- helpers -------------------- */
@@ -53,7 +59,9 @@ export class ConversationManager {
     if (!session) {
       session = await CharacterSession.create({
         userId: userId,
-        language: "es" // default María
+        characterId: "maria", // default character
+        language: "es", // default María's language
+        isActive: true // Ensure isActive is set
       });
     }
     return session;

@@ -60,8 +60,10 @@ app.use("/api/auth", auth_routes_1.default);
 app.use("/api/lessons", lesson_routes_1.default);
 app.use("/api/notes", notes_routes_1.default);
 app.use("/api/reading", readingArticle_routes_1.default);
+// Character routes enabled for authentication endpoints
 app.use("/api/character", character_routes_1.default);
 app.use("/api/settings", settings_routes_1.default);
+app.use("/api/vrm", vrm_routes_1.default);
 app.use("/api/vrm", vrm_routes_1.default);
 // ────────────────────────────────────────────────────────────
 // Error handler

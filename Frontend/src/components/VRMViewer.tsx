@@ -163,31 +163,76 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
       
       // Reset T-pose - set character to neutral standing position
       if (vrm.humanoid) {
-        // Reset arms to natural position
-        const leftUpperArm = vrm.humanoid.getBoneNode('leftUpperArm')
-        const rightUpperArm = vrm.humanoid.getBoneNode('rightUpperArm')
-        const leftLowerArm = vrm.humanoid.getBoneNode('leftLowerArm')
-        const rightLowerArm = vrm.humanoid.getBoneNode('rightLowerArm')
+        console.log('Applying natural pose to VRM...')
+        
+        // Reset all bones to neutral first
+        const bones = [
+          'hips', 'spine', 'chest', 'upperChest', 'neck', 'head',
+          'leftShoulder', 'rightShoulder',
+          'leftUpperArm', 'rightUpperArm',
+          'leftLowerArm', 'rightLowerArm',
+          'leftHand', 'rightHand',
+          'leftUpperLeg', 'rightUpperLeg',
+          'leftLowerLeg', 'rightLowerLeg',
+          'leftFoot', 'rightFoot'
+        ];
+
+        bones.forEach(boneName => {
+          const bone = vrm.humanoid.getRawBoneNode(boneName);
+          if (bone) {
+            bone.rotation.set(0, 0, 0);
+          }
+        });
+
+        // Apply natural standing pose
+        const leftUpperArm = vrm.humanoid.getRawBoneNode('leftUpperArm')
+        const rightUpperArm = vrm.humanoid.getRawBoneNode('rightUpperArm')
+        const leftLowerArm = vrm.humanoid.getRawBoneNode('leftLowerArm')
+        const rightLowerArm = vrm.humanoid.getRawBoneNode('rightLowerArm')
+        const leftHand = vrm.humanoid.getRawBoneNode('leftHand')
+        const rightHand = vrm.humanoid.getRawBoneNode('rightHand')
         
         if (leftUpperArm) {
-          leftUpperArm.rotation.z = -0.5  // Bring arms down
-          leftUpperArm.rotation.x = 0.2   // Slight forward
+          leftUpperArm.rotation.z = -0.2  // Arms down and slightly forward
+          leftUpperArm.rotation.x = 0.1   
         }
         if (rightUpperArm) {
-          rightUpperArm.rotation.z = 0.5   // Bring arms down
-          rightUpperArm.rotation.x = 0.2   // Slight forward
+          rightUpperArm.rotation.z = 0.2   
+          rightUpperArm.rotation.x = 0.1   
         }
         if (leftLowerArm) {
-          leftLowerArm.rotation.z = 0.8    // Bend elbow naturally
+          leftLowerArm.rotation.z = 0.3    // Natural elbow bend
         }
         if (rightLowerArm) {
-          rightLowerArm.rotation.z = -0.8   // Bend elbow naturally
+          rightLowerArm.rotation.z = -0.3   
+        }
+        if (leftHand) {
+          leftHand.rotation.z = 0.1        // Slightly relaxed hands
+        }
+        if (rightHand) {
+          rightHand.rotation.z = -0.1
         }
         
         // Slight forward lean for more natural pose
-        const spine = vrm.humanoid.getBoneNode('spine')
-        if (spine) spine.rotation.x = 0.1
+        const spine = vrm.humanoid.getRawBoneNode('spine')
+        if (spine) spine.rotation.x = 0.05
+        
+        // Head position
+        const head = vrm.humanoid.getRawBoneNode('head')
+        if (head) {
+          head.rotation.x = -0.1 // Slightly looking down (more natural)
+        }
+        
+        // CRITICAL: Update humanoid after setting bone rotations
+        vrm.humanoid.update();
+        
+        console.log('Natural pose applied successfully!')
+      } else {
+        console.warn('VRM humanoid not available - cannot apply natural pose')
       }
+
+      // Update VRM to apply bone changes
+      vrm.update(0.016); // 60fps
 
       // Add to scene
       if (sceneRef.current) {
@@ -238,23 +283,67 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
           vrm.expressionManager.setValue('happy', 0.6)
           break
         default:
-          // Neutral expression
+          // Neutral expression with subtle smile
+          vrm.expressionManager.setValue('happy', 0.1)
           break
       }
 
+      // Blinking animation
+      const blinkCycle = time * 0.8
+      const blinkIntensity = Math.sin(blinkCycle) > 0.85 ? 1 : 0
+      vrm.expressionManager.setValue('blink', blinkIntensity)
+
       // Add thinking animation (subtle head movement)
       if (isThinking) {
-        const headBone = vrm.humanoid?.getBoneNode('head')
+        const headBone = vrm.humanoid?.getRawBoneNode('head')
         if (headBone) {
           headBone.rotation.y = Math.sin(time * 2) * 0.1
           headBone.rotation.x = Math.sin(time * 1.5) * 0.05
         }
+      } else {
+        // Idle head movement
+        const headBone = vrm.humanoid?.getRawBoneNode('head')
+        if (headBone) {
+          headBone.rotation.y = Math.sin(time * 0.3) * 0.05
+          headBone.rotation.x = Math.sin(time * 0.2) * 0.02
+        }
       }
+      
+      // Update humanoid after bone changes
+      vrm.humanoid.update();
     }
 
     // Subtle breathing animation
     if (vrm.scene) {
-      vrm.scene.scale.y = 1 + Math.sin(time * 1.5) * 0.01
+      vrm.scene.scale.y = 1 + Math.sin(time * 1.2) * 0.008 // Slower, more natural breathing
+      
+      // Slight chest movement for breathing
+      const chest = vrm.humanoid?.getRawBoneNode('chest')
+      if (chest) {
+        chest.rotation.x = Math.sin(time * 1.2) * 0.02
+      }
+    }
+
+    // Subtle idle body movement for more natural pose
+    if (vrm.humanoid && !isThinking) {
+      const spine = vrm.humanoid.getRawBoneNode('spine')
+      if (spine) {
+        spine.rotation.y = Math.sin(time * 0.5) * 0.02
+        spine.rotation.x = 0.1 + Math.sin(time * 0.4) * 0.01
+      }
+
+      // Subtle arm sway
+      const leftUpperArm = vrm.humanoid.getRawBoneNode('leftUpperArm')
+      const rightUpperArm = vrm.humanoid.getRawBoneNode('rightUpperArm')
+      if (leftUpperArm) {
+        leftUpperArm.rotation.z = -0.5 + Math.sin(time * 0.6) * 0.05
+      }
+      if (rightUpperArm) {
+        rightUpperArm.rotation.z = 0.5 + Math.sin(time * 0.7) * 0.05
+      }
+      
+      // Update humanoid after idle movements
+      vrm.humanoid.update();
     }
   }
 

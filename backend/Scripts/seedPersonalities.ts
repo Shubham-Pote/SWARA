@@ -4,7 +4,7 @@ import path from "path";
 import CharacterPersonality from "../src/models/characterPersonality";
 
 // Load environment variables from src/.env
-dotenv.config({ path: path.join(__dirname, "../src/.env") });
+dotenv.config({ path: path.join(__dirname, "../.env") });
 
 async function seedPersonalities() {
   try {

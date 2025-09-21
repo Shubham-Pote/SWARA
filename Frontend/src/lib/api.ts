@@ -1,4 +1,5 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+console.log('API_BASE_URL:', API_BASE_URL);
 
 // Token management functions
 export const setToken = (token: string) => {
@@ -45,10 +46,12 @@ export const removeToken = () => {
 // Get auth headers for API requests
 export const getAuthHeaders = () => {
   const token = getToken();
-  return {
+  const headers = {
     'Content-Type': 'application/json',
     ...(token && { 'Authorization': `Bearer ${token}` }),
   };
+  console.log('Auth headers:', headers, 'Token exists:', !!token);
+  return headers;
 };
 
 // Auth API functions
@@ -473,6 +476,273 @@ export const readingAPI = {
       throw new Error('Failed to get reading stats');
     }
     
+    return await response.json();
+  },
+};
+
+// Character API functions
+export const characterAPI = {
+  // Start a new conversation with a character
+  startConversation: async (characterId: string) => {
+    console.log('API: Starting conversation', { characterId, API_BASE_URL });
+    
+    const response = await fetch(`${API_BASE_URL}/character/start`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ 
+        characterId,
+        language: characterId === 'akira' ? 'ja' : 'es',
+        personality: 'friendly'
+      }),
+    });
+
+    console.log('API: Start conversation response status:', response.status);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('API: Start conversation error:', errorData);
+      throw new Error(errorData.message || 'Failed to start conversation');
+    }
+
+    const data = await response.json();
+    console.log('API: Start conversation success:', data);
+    
+    return {
+      conversation: data.data.session,
+      initialMessage: null // Backend doesn't provide initial message
+    };
+  },
+
+  // Send a message to character
+  sendMessage: async (sessionId: string, content: string) => {
+    console.log('API: Sending message to backend', { sessionId, content, API_BASE_URL });
+    
+    const response = await fetch(`${API_BASE_URL}/character/message`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ 
+        sessionId, 
+        message: content 
+      }),
+    });
+
+    console.log('API: Response status:', response.status, response.statusText);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('API: Error response:', errorData);
+      throw new Error(errorData.message || 'Failed to send message');
+    }
+
+    const data = await response.json();
+    console.log('API: Success response:', data);
+    
+    // Transform backend response to match frontend expectations
+    return {
+      userMessage: {
+        _id: data.data.userMessage._id,
+        conversationId: sessionId,
+        sender: 'user' as const,
+        content: data.data.userMessage.message,
+        createdAt: data.data.userMessage.timestamp
+      },
+      characterMessage: {
+        _id: data.data.characterResponse._id,
+        conversationId: sessionId,
+        sender: 'character' as const,
+        content: data.data.characterResponse.message,
+        createdAt: data.data.characterResponse.timestamp
+      }
+    };
+  },
+
+  // Send voice message to character (for now, convert to text)
+  sendVoiceMessage: async (sessionId: string, audioFile: File) => {
+    // For now, we'll just send a placeholder text message
+    // In a real implementation, you'd convert speech to text first
+    const placeholderText = "Voice message received";
+    return await characterAPI.sendMessage(sessionId, placeholderText);
+  },
+
+  // End conversation
+  endConversation: async (sessionId: string) => {
+    const response = await fetch(`${API_BASE_URL}/character/end/${sessionId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Failed to end conversation');
+    }
+
+    return await response.json();
+  },
+
+  // Get conversation history
+  getHistory: async () => {
+    const response = await fetch(`${API_BASE_URL}/character/history`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Failed to fetch history');
+    }
+
+    return await response.json();
+  },
+
+  // Clear conversation history
+  clearHistory: async () => {
+    const response = await fetch(`${API_BASE_URL}/character/history`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Failed to clear history');
+    }
+
+    return await response.json();
+  },
+
+  // Get character by ID
+  getCharacterById: async (characterId: string) => {
+    // This is a mock since backend doesn't have character details endpoint
+    const characters = {
+      'maria': {
+        _id: 'maria',
+        id: 'maria',
+        name: 'María González',
+        age: 28,
+        occupation: 'Spanish Teacher',
+        location: 'Madrid, Spain',
+        nationality: 'Spanish',
+        language: 'spanish' as const,
+        personality: ['friendly', 'patient', 'encouraging'],
+        conversationStyle: 'friendly' as const,
+        backstory: 'A passionate Spanish teacher who loves helping students learn about Spanish culture and language.',
+        interests: ['culture', 'travel', 'food'],
+        specialties: ['grammar', 'conversation', 'cultural context'],
+        difficultyLevel: 'intermediate' as const,
+        teachingStyle: 'Interactive and supportive',
+        vocabularyFocus: ['daily life', 'travel', 'culture'],
+        avatar: '/models/maria/avatar.jpg',
+        voiceSettings: {
+          openaiVoice: 'nova' as const,
+          defaultSpeed: 1.0,
+          emotionMapping: {
+            happy: 1.2,
+            sad: 0.8,
+            excited: 1.3,
+            neutral: 1.0,
+          },
+        },
+        isLocked: false,
+        unlockRequirement: {
+          type: 'level' as const,
+          value: 1,
+        },
+        isActive: true
+      },
+      'akira': {
+        _id: 'akira',
+        id: 'akira',
+        name: 'Akira Tanaka',
+        age: 32,
+        occupation: 'Japanese Tutor',
+        location: 'Tokyo, Japan',
+        nationality: 'Japanese',
+        language: 'japanese' as const,
+        personality: ['calm', 'methodical', 'wise'],
+        conversationStyle: 'formal' as const,
+        backstory: 'A patient Japanese tutor who specializes in making complex concepts easy to understand.',
+        interests: ['technology', 'meditation', 'art'],
+        specialties: ['grammar', 'writing systems', 'cultural etiquette'],
+        difficultyLevel: 'advanced' as const,
+        teachingStyle: 'Structured and detailed',
+        vocabularyFocus: ['business', 'technology', 'culture'],
+        avatar: '/models/akira/avatar.jpg',
+        voiceSettings: {
+          openaiVoice: 'onyx' as const,
+          defaultSpeed: 0.9,
+          emotionMapping: {
+            happy: 1.1,
+            sad: 0.8,
+            excited: 1.2,
+            neutral: 1.0,
+          },
+        },
+        isLocked: false,
+        unlockRequirement: {
+          type: 'level' as const,
+          value: 1,
+        },
+        isActive: true
+      }
+    };
+
+    const character = characters[characterId as keyof typeof characters];
+    if (!character) {
+      throw new Error('Character not found');
+    }
+
+    return { character };
+  },
+};
+
+// VRM API functions
+export const vrmAPI = {
+  // Send gesture command to VRM model
+  sendGesture: async (gesture: string) => {
+    const response = await fetch(`${API_BASE_URL}/vrm/gesture`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ gesture }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Failed to send gesture');
+    }
+
+    return await response.json();
+  },
+};
+
+// Settings API functions
+export const settingsAPI = {
+  // Switch language setting
+  switchLanguage: async (language: string) => {
+    const response = await fetch(`${API_BASE_URL}/settings/language`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ language }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Failed to switch language');
+    }
+
+    return await response.json();
+  },
+
+  // Get current session
+  getSession: async () => {
+    const response = await fetch(`${API_BASE_URL}/settings/session`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || 'Failed to get session');
+    }
+
     return await response.json();
   },
 };

@@ -5,7 +5,7 @@ import {
   clearHistory, 
   startConversation, 
   sendMessage, 
-  endConversation 
+  endConversation
 } from "../controllers/character.controller";
 import { apiRateLimiter } from "../middleware/rateLimiter.middleware";
 import { authMiddleware } from "../middleware/auth.middleware";

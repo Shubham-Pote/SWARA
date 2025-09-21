@@ -38,7 +38,12 @@ app.set("io", io);                            // expose to controllers
 // ────────────────────────────────────────────────────────────
 // Global middleware
 // ────────────────────────────────────────────────────────────
-app.use(cors());
+app.use(cors({
+  origin: ["http://localhost:3000", "http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:8080"],
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true,
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
 app.use(helmet());
 app.use(express.json());
 
@@ -62,13 +67,15 @@ app.get("/", (_req, res) =>
 // ────────────────────────────────────────────────────────────
 // REST routes
 // ────────────────────────────────────────────────────────────
-app.use("/api/auth",     authRoutes);
-app.use("/api/lessons",  lessonRoutes);
-app.use("/api/notes",    notesRoutes);
-app.use("/api/reading",  readingArticleRoutes);
+app.use("/api/auth",      authRoutes);
+app.use("/api/lessons",   lessonRoutes);
+app.use("/api/notes",     notesRoutes);
+app.use("/api/reading",   readingArticleRoutes);
 
+// Character routes enabled for authentication endpoints
 app.use("/api/character", characterRoutes);
 app.use("/api/settings",  settingsRoutes);
+app.use("/api/vrm",       vrmRoutes);
 app.use("/api/vrm",       vrmRoutes);
 
 // ────────────────────────────────────────────────────────────
@@ -88,3 +95,4 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () =>
   console.log(`🚀 REST & WebSocket server running at http://localhost:${PORT}`)
 );
+

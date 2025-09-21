@@ -26,30 +26,46 @@ class CharacterSocketService {
   private socket: Socket | null = null
   private isConnected = false
   private callbacks: { [key: string]: Function[] } = {}
+  private pendingActions: Array<() => void> = []
 
   constructor() {
     this.connect()
   }
 
   private connect() {
+    // Prevent multiple connections
+    if (this.socket && this.socket.connected) {
+      console.log('⚠️ WebSocket already connected, skipping...');
+      return;
+    }
+
     // Use the current URL's protocol and hostname for WebSocket connection
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const hostname = window.location.hostname
-    const port = '5000' // Backend port
+    const port = '5000' // Backend port - always 5000 regardless of frontend port
     const BACKEND_URL = `http://${hostname}:${port}`
     
-    console.log('Connecting to WebSocket:', `${BACKEND_URL}/character`)
+    console.log('🔌 Connecting to WebSocket:', `${BACKEND_URL}/character`)
+    console.log('🌐 Frontend URL:', window.location.href)
+    
+    // Get authentication token
+    const token = localStorage.getItem('token')
+    console.log('🔑 Auth token exists:', !!token)
     
     this.socket = io(`${BACKEND_URL}/character`, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],  // Try polling first, then upgrade to websocket
       upgrade: true,
-      rememberUpgrade: true,
+      rememberUpgrade: false,  // Don't remember upgrade to allow fallback
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      timeout: 20000,
-      forceNew: true
+      reconnectionAttempts: 3,  // Increased back to 3
+      reconnectionDelay: 2000,  // Start with 2 seconds
+      reconnectionDelayMax: 8000,  // Max 8 seconds
+      timeout: 15000,  // Increased timeout to 15 seconds
+      forceNew: false,  // Allow connection reuse
+      auth: {
+        token: token  // Properly pass token in auth object
+      }
     })
 
     this.setupEventListeners()
@@ -60,8 +76,16 @@ class CharacterSocketService {
 
     this.socket.on('connect', () => {
       console.log('✅ Connected to character server')
+      console.log('Socket ID:', this.socket?.id)
       this.isConnected = true
       this.emit('connection_status', { connected: true })
+      
+      // Process any pending actions
+      if (this.pendingActions.length > 0) {
+        console.log('🔄 Processing', this.pendingActions.length, 'pending actions')
+        this.pendingActions.forEach(action => action())
+        this.pendingActions = []
+      }
     })
 
     this.socket.on('disconnect', () => {
@@ -72,15 +96,16 @@ class CharacterSocketService {
 
     this.socket.on('connect_error', (error) => {
       console.error('❌ Connection error:', error)
+      console.log('Error details:', error.message)
       this.emit('connection_error', error)
       
-      // Try fallback to mock mode after 3 failed attempts
+      // Try fallback to mock mode after failed attempts
       setTimeout(() => {
         if (!this.isConnected) {
           console.warn('🔄 Switching to mock mode for development')
           this.enableMockMode()
         }
-      }, 5000)
+      }, 10000)  // Increased from 2000ms to 10000ms to allow proper connection attempts
     })
 
     // Character response events
@@ -99,6 +124,18 @@ class CharacterSocketService {
       fallback?: boolean 
     }) => {
       this.emit('character_response', data)
+    })
+
+    // Character switch events
+    this.socket.on('character_switched', (data: { 
+      characterId: string; 
+      language: string 
+    }) => {
+      this.emit('character_switched', data)
+    })
+
+    this.socket.on('language_switched', (data: { mode: string }) => {
+      this.emit('language_switched', data)
     })
 
     // VRM animation events
@@ -141,32 +178,41 @@ class CharacterSocketService {
 
   // Send user message to character
   sendMessage(text: string): void {
+    console.log('📤 Sending message via WebSocket:', text)
     if (!this.isConnected || !this.socket) {
+      console.warn('⚠️ Not connected, cannot send message')
       this.emit('error', { message: 'Not connected to server' })
       return
     }
 
     this.socket.emit('user_message', { text })
+    console.log('✅ Message sent via WebSocket')
   }
 
   // Switch character
   switchCharacter(characterId: 'maria' | 'akira'): void {
+    console.log('🔄 Switching to character:', characterId)
     if (!this.isConnected || !this.socket) {
-      this.emit('error', { message: 'Not connected to server' })
+      console.log('⏳ Not connected yet, queuing character switch for when connected')
+      this.pendingActions.push(() => this.switchCharacter(characterId))
       return
     }
 
     this.socket.emit('switch_character', { characterId })
+    console.log('✅ Character switch request sent')
   }
 
   // Set language preference
   setLanguage(language: string): void {
+    console.log('🌐 Setting language to:', language)
     if (!this.isConnected || !this.socket) {
-      this.emit('error', { message: 'Not connected to server' })
+      console.log('⏳ Not connected yet, queuing language setting for when connected')
+      this.pendingActions.push(() => this.setLanguage(language))
       return
     }
 
     this.socket.emit('switch_language', { language })
+    console.log('✅ Language switch request sent')
   }
 
   // Request voice synthesis
@@ -236,6 +282,19 @@ class CharacterSocketService {
     this.isConnected = true
     this.emit('connection_status', { connected: true })
     
+    // Process any pending actions in mock mode
+    if (this.pendingActions.length > 0) {
+      console.log('🔄 Processing', this.pendingActions.length, 'pending actions in mock mode')
+      this.pendingActions.forEach(action => {
+        try {
+          action()
+        } catch (error) {
+          console.log('Mock action executed (no actual WebSocket):', error)
+        }
+      })
+      this.pendingActions = []
+    }
+    
     // Override sendMessage for mock responses
     const originalSendMessage = this.sendMessage
     this.sendMessage = (text: string) => {
@@ -247,21 +306,41 @@ class CharacterSocketService {
       // Simulate response after delay
       setTimeout(() => {
         const mockResponses = [
-          "This is a mock response since the backend is not available.",
-          "I'm running in demo mode. Please start the backend server for full functionality.",
-          "Mock mode is active. Your message was: " + text
+          "¡Hola! I'm María, your Spanish teacher. I'm running in demo mode right now.",
+          "Hello! This is Akira. The backend server needs to be connected for full functionality.",
+          "Great question! In demo mode, I can still show animations but not real AI responses.",
+          `You said: "${text}". I'd love to give you a proper response when connected!`
         ]
         
         const response = mockResponses[Math.floor(Math.random() * mockResponses.length)]
+        const emotions = ['happy', 'thoughtful', 'encouraging', 'neutral']
+        const randomEmotion = emotions[Math.floor(Math.random() * emotions.length)]
+        
+        // Emit VRM animation for the response
+        this.emit('vrm_animation', {
+          emotion: randomEmotion,
+          animation: 'talking',
+          duration: 3000
+        })
         
         this.emit('character_response', {
           text: response,
-          emotion: 'neutral',
+          emotion: randomEmotion,
           isError: false,
           fallback: true
         })
         
         this.emit('character_thinking', false)
+        
+        // Add a small delay then reset to neutral emotion
+        setTimeout(() => {
+          this.emit('vrm_animation', {
+            emotion: 'neutral',
+            animation: 'idle',
+            duration: 1000
+          })
+        }, 4000)
+        
       }, 1000 + Math.random() * 2000)
     }
   }

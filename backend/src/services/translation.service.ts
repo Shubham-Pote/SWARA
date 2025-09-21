@@ -1,4 +1,4 @@
-// Learning translations
+// Learning translations with character-specific integration
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 interface TranslationResult {
@@ -9,11 +9,37 @@ interface TranslationResult {
   grammarNotes?: string[];
   culturalContext?: string;
   confidence: number;
+  characterResponse?: string;
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
+}
+
+interface CharacterTranslationContext {
+  characterId: 'maria' | 'akira';
+  learningLevel: string;
+  previousMistakes?: string[];
+  focusAreas?: string[];
 }
 
 export class TranslationService {
   private genAI: GoogleGenerativeAI;
   private model: any;
+
+  private characterPatterns = {
+    maria: {
+      enthusiasmLevel: 'high',
+      teachingStyle: 'warm and encouraging',
+      culturalFocus: 'Mexican Spanish and Latin American culture',
+      commonPhrases: ['¡Qué bueno!', '¡Excelente!', '¡No te preocupes!', 'Vamos a practicar'],
+      specialties: ['Mexican slang', 'emotion expressions', 'family terminology', 'food culture']
+    },
+    akira: {
+      enthusiasmLevel: 'calm',
+      teachingStyle: 'patient and respectful',
+      culturalFocus: 'Japanese culture and proper etiquette',
+      commonPhrases: ['がんばって', 'そうですね', 'だいじょうぶです', '一緒に学びましょう'],
+      specialties: ['politeness levels', 'kanji meanings', 'cultural context', 'proper grammar']
+    }
+  };
 
   constructor() {
     if (!process.env.GEMINI_API_KEY) {
@@ -23,39 +49,17 @@ export class TranslationService {
     this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
 
-  async translateForLearning(
-    text: string, 
-    sourceLanguage: string, 
-    targetLanguage: string,
-    includeExplanation: boolean = true
+  async translateWithCharacter(
+    text: string,
+    characterId: 'maria' | 'akira',
+    learningLevel: string = 'beginner'
   ): Promise<TranslationResult> {
+    const targetLanguage = characterId === 'maria' ? 'spanish' : 'japanese';
+    const sourceLanguage = this.detectSourceLanguage(text);
+    
     try {
-      const prompt = `
-        Translate this text for language learning purposes:
-        
-        Text: "${text}"
-        From: ${sourceLanguage}
-        To: ${targetLanguage}
-        
-        ${includeExplanation ? `
-        Please provide:
-        1. Accurate translation
-        2. Grammar explanation
-        3. Cultural context if relevant
-        4. Alternative expressions if applicable
-        
-        Return JSON format:
-        {
-          "translatedText": "translation here",
-          "explanation": "grammar explanation",
-          "grammarNotes": ["note1", "note2"],
-          "culturalContext": "cultural explanation if relevant",
-          "confidence": 0.0-1.0
-        }
-        ` : 'Just provide the translation in JSON format: {"translatedText": "translation here", "confidence": 0.0-1.0}'}
-        
-        Only return valid JSON, no other text.
-      `;
+      const character = this.characterPatterns[characterId];
+      const prompt = `Translate "${text}" from ${sourceLanguage} to ${targetLanguage}. Character: ${characterId === 'maria' ? 'María, warm Mexican Spanish teacher' : 'Akira, respectful Japanese teacher'}. Return JSON: {"translatedText": "", "explanation": "", "grammarNotes": [], "culturalContext": "", "confidence": 0.9, "difficulty": "beginner", "characterResponse": ""}`;
 
       const result = await this.model.generateContent(prompt);
       const response = result.response.text();
@@ -69,10 +73,11 @@ export class TranslationService {
           explanation: parsed.explanation,
           grammarNotes: parsed.grammarNotes || [],
           culturalContext: parsed.culturalContext,
-          confidence: parsed.confidence || 0.8
+          confidence: parsed.confidence || 0.8,
+          characterResponse: parsed.characterResponse,
+          difficulty: parsed.difficulty || 'intermediate'
         };
       } catch (parseError) {
-        console.warn('Failed to parse translation response:', response);
         return {
           translatedText: text,
           sourceLanguage,
@@ -91,51 +96,22 @@ export class TranslationService {
     }
   }
 
-  async detectAndTranslate(text: string, targetLanguage: string): Promise<TranslationResult> {
+  private detectSourceLanguage(text: string): string {
+    if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text)) {
+      return 'japanese';
+    }
+    if (/[ñáéíóúü¿¡]/.test(text.toLowerCase())) {
+      return 'spanish';
+    }
+    return 'english';
+  }
+
+  async explainGrammar(text: string, language: string, characterId?: 'maria' | 'akira'): Promise<string[]> {
     try {
-      // Simple language detection based on character patterns
-      let sourceLanguage = 'english';
+      const characterPrompt = characterId ? 
+        `Explain as ${characterId === 'maria' ? 'María' : 'Akira'}: ` : '';
       
-      if (/[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text)) {
-        sourceLanguage = 'japanese';
-      } else if (/[ñáéíóúü¿¡]/.test(text.toLowerCase())) {
-        sourceLanguage = 'spanish';
-      }
-
-      return await this.translateForLearning(text, sourceLanguage, targetLanguage);
-    } catch (error) {
-      console.error('Error in detect and translate:', error);
-      return {
-        translatedText: text,
-        sourceLanguage: 'unknown',
-        targetLanguage,
-        confidence: 0.1
-      };
-    }
-  }
-
-  async translateToNative(text: string, userNativeLanguage: string = 'english'): Promise<string> {
-    try {
-      const result = await this.translateForLearning(text, 'auto', userNativeLanguage, false);
-      return result.translatedText;
-    } catch (error) {
-      console.error('Error translating to native language:', error);
-      return text;
-    }
-  }
-
-  async explainGrammar(text: string, language: string): Promise<string[]> {
-    try {
-      const prompt = `
-        Explain the grammar structures in this ${language} text for language learners:
-        "${text}"
-        
-        Return an array of grammar explanations in JSON format:
-        ["explanation1", "explanation2"]
-        
-        Only return valid JSON, no other text.
-      `;
-
+      const prompt = characterPrompt + `Explain grammar in "${text}" for ${language} learners. Return JSON array: ["explanation1", "explanation2"]`;
       const result = await this.model.generateContent(prompt);
       const response = result.response.text();
       
