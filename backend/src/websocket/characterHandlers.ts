@@ -5,7 +5,7 @@ import { ConversationManager } from "./conversationManager";
 import { StreamingManager } from "./streamingManager";
 import { ErrorRecoveryService } from "../services/errorRecovery.service";
 import { RealTimeMonitor } from "../services/realTimeMonitor.service";
-import { ElevenLabsService } from "../services/elevenlabs.service";
+import { GeminiAudioStreamService } from "../services/geminiAudio.service";
 import { VrmAnimationService } from "../services/vrmAnimation.service";
 
 const characterAI = new CharacterAIService();
@@ -13,7 +13,7 @@ const conversationManager = new ConversationManager();
 const streamingManager = new StreamingManager();
 const errorRecovery = new ErrorRecoveryService();
 const realTimeMonitor = new RealTimeMonitor();
-const elevenLabs = new ElevenLabsService();
+const geminiAudio = new GeminiAudioStreamService();
 const vrmAnimation = new VrmAnimationService();
 
 /* ------------------------------------------------------------------ */
@@ -59,11 +59,12 @@ export function registerCharacterHandlers(ns: Namespace) {
           payload.text
         );
 
-        // Get current session to determine character - use the same logic as getOrCreateSession
+        // Get FRESH session to determine character - refresh from DB
         const session = await conversationManager.getCurrentSession(safeUserId);
         const characterId = session?.characterId || 'maria';
 
         console.log(`🎭 Using character: ${characterId} for user: ${safeUserId}`);
+        console.log(`📋 Session data: characterId=${session?.characterId}, language=${session?.language}`);
 
         // Emit typing indicator immediately
         socket.emit("character_thinking");
@@ -95,33 +96,43 @@ export function registerCharacterHandlers(ns: Namespace) {
         // Emit final response so frontend knows stream is complete
         socket.emit("character_response", { text: fullText });
 
-        // Generate voice synthesis for character response
+        // Stream audio synthesis using Browser-based Web Speech API
         try {
-          console.log(`Checking voice synthesis for ${characterId}...`);
+          console.log(`🎤 Sending text to frontend for Web Speech API TTS: ${characterId}...`);
           
-          // Check if ElevenLabs is properly configured
-          const hasElevenLabsKey = process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_API_KEY.length > 0;
+          // Send text to frontend for browser-based TTS instead of server-side audio generation
+          socket.emit('tts_request', {
+            text: fullText,
+            characterId: characterId as 'maria' | 'akira',
+            language: characterId === 'akira' ? 'ja-JP' : 'es-ES',
+            voice: characterId === 'maria' ? 'female' : 'female',
+            emotion: 'neutral',
+            speed: characterId === 'maria' ? 0.9 : 1.0
+          });
           
-          if (hasElevenLabsKey) {
-            console.log(`Generating voice for ${characterId}: ${fullText.substring(0, 100)}...`);
-            const voiceResult = await elevenLabs.generateWithLipSync(fullText, characterId as 'maria' | 'akira');
-            
-            if (voiceResult && voiceResult.audioUrl && voiceResult.audioUrl.length > 0) {
-              socket.emit("voice_audio", {
-                audioUrl: voiceResult.audioUrl,
-                text: fullText,
-                emotion: 'neutral' // TODO: Get emotion from previous analysis
-              });
-              console.log(`Voice synthesis completed for ${characterId}`);
-            } else {
-              console.log('Voice synthesis returned empty audio, skipping voice_audio event');
-            }
-          } else {
-            console.log('ElevenLabs API key not configured, skipping voice synthesis');
-          }
+          console.log(`✅ TTS request sent to frontend for ${characterId}`);
+          
         } catch (voiceError) {
-          console.error('Voice synthesis failed:', voiceError);
-          // Continue without voice - don't break the conversation
+          console.error('❌ TTS request failed:', voiceError);
+          
+          // Fallback: still try server-side generation
+          try {
+            const streamSuccess = await geminiAudio.streamAudioToSocket(
+              fullText,
+              socket,
+              {
+                characterId: characterId as 'maria' | 'akira',
+                emotion: 'neutral',
+                speed: characterId === 'maria' ? 0.9 : 1.0
+              }
+            );
+            
+            if (streamSuccess) {
+              console.log(`✅ Fallback server TTS completed for ${characterId}`);
+            }
+          } catch (fallbackError) {
+            console.error('❌ Both TTS methods failed:', fallbackError);
+          }
         }
 
         // Generate VRM animation based on response emotion

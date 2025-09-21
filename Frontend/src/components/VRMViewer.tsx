@@ -14,22 +14,25 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
   const rendererRef = useRef<THREE.WebGLRenderer>()
   const cameraRef = useRef<THREE.PerspectiveCamera>()
   const vrmRef = useRef<any>()
+  const clockRef = useRef<THREE.Clock>(new THREE.Clock())
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
   const animationIdRef = useRef<number>()
+  const [isGreeting, setIsGreeting] = useState(false)
+  const greetingStartTimeRef = useRef<number | null>(null)
 
-  // Character configurations
+  // Character configurations with better positioning
   const characterConfig = {
     maria: {
       modelPath: '/models/maria/maria.vrm',
-      position: [0, -1.5, 0],
-      scale: 1.2,
+      position: [0, 0, 0],  // Higher position to show more of upper body
+      scale: 1.2,  // Adjusted scale
       flag: '🇪🇸'
     },
     akira: {
       modelPath: '/models/akira/akira.vrm', 
-      position: [0, -1.5, 0],
-      scale: 1.2,
+      position: [0, 0, 0],  // Higher position to show more of upper body
+      scale: 1.2,  // Adjusted scale
       flag: '🇯🇵'
     }
   }
@@ -39,12 +42,15 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
 
     // Initialize Three.js scene
     const scene = new THREE.Scene()
+    scene.background = null  // Transparent background
+    
     const camera = new THREE.PerspectiveCamera(
-      30,
+      35,  // Wider FOV for better view
       mountRef.current.clientWidth / mountRef.current.clientHeight,
       0.1,
-      1000
+      20
     )
+    
     const renderer = new THREE.WebGLRenderer({ 
       antialias: true, 
       alpha: true,
@@ -56,6 +62,7 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
     
     mountRef.current.appendChild(renderer.domElement)
 
@@ -67,19 +74,23 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
     // Set up lighting
     setupLighting(scene)
 
-    // Position camera
-    camera.position.set(0, 0, 2.5)
-    camera.lookAt(0, -0.5, 0)
+    // Position camera for better framing
+    camera.position.set(0, 0.2, 2.5)  // Closer and centered for better view
+    camera.lookAt(0, 0.1, 0)  // Look at character's chest/face area
 
-    // Try to load VRM model
+    // Load VRM model
     loadVRMModel()
 
     // Start render loop
     const animate = () => {
       animationIdRef.current = requestAnimationFrame(animate)
       
-      // Update VRM animations based on emotion and thinking state
-      updateVRMAnimations()
+      const deltaTime = clockRef.current.getDelta()
+      
+      // Update VRM animations
+      if (vrmRef.current) {
+        updateVRMAnimations(deltaTime)
+      }
       
       renderer.render(scene, camera)
     }
@@ -112,22 +123,27 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
   }, [characterId])
 
   const setupLighting = (scene: THREE.Scene) => {
-    // Ambient light
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
+    // Brighter ambient light
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7)
     scene.add(ambientLight)
 
-    // Directional light (main light)
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
-    directionalLight.position.set(1, 1, 1)
+    // Main directional light from front
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0)
+    directionalLight.position.set(1, 2, 3)
     directionalLight.castShadow = true
     directionalLight.shadow.mapSize.width = 2048
     directionalLight.shadow.mapSize.height = 2048
     scene.add(directionalLight)
 
-    // Fill light
-    const fillLight = new THREE.DirectionalLight(0x87ceeb, 0.3)
-    fillLight.position.set(-1, 0, 1)
+    // Fill light from left
+    const fillLight = new THREE.DirectionalLight(0x88ccff, 0.5)
+    fillLight.position.set(-2, 1, 2)
     scene.add(fillLight)
+    
+    // Back light for rim lighting
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.4)
+    rimLight.position.set(0, 1, -2)
+    scene.add(rimLight)
   }
 
   const loadVRMModel = async () => {
@@ -143,8 +159,8 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
         throw new Error('VRM file not found')
       }
 
-      // Import VRM loader dynamically to reduce bundle size
-      const { VRMLoaderPlugin } = await import('@pixiv/three-vrm')
+      // Import VRM loader
+      const { VRMLoaderPlugin, VRMHumanBoneName } = await import('@pixiv/three-vrm')
       const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js')
 
       const loader = new GLTFLoader()
@@ -157,82 +173,29 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
         throw new Error('Invalid VRM file')
       }
 
-      // Configure VRM
+      // Position and scale the model
       vrm.scene.position.set(...config.position)
       vrm.scene.scale.setScalar(config.scale)
       
-      // Reset T-pose - set character to neutral standing position
+      // Check if model needs rotation (some VRMs face backwards by default)
+      // For now, no rotation - adjust based on specific model
+      vrm.scene.rotation.y = Math.PI  // Uncomment if model faces backwards
+      
+      // Set up natural idle pose
       if (vrm.humanoid) {
-        console.log('Applying natural pose to VRM...')
-        
-        // Reset all bones to neutral first
-        const bones = [
-          'hips', 'spine', 'chest', 'upperChest', 'neck', 'head',
-          'leftShoulder', 'rightShoulder',
-          'leftUpperArm', 'rightUpperArm',
-          'leftLowerArm', 'rightLowerArm',
-          'leftHand', 'rightHand',
-          'leftUpperLeg', 'rightUpperLeg',
-          'leftLowerLeg', 'rightLowerLeg',
-          'leftFoot', 'rightFoot'
-        ];
-
-        bones.forEach(boneName => {
-          const bone = vrm.humanoid.getRawBoneNode(boneName);
-          if (bone) {
-            bone.rotation.set(0, 0, 0);
-          }
-        });
-
-        // Apply natural standing pose
-        const leftUpperArm = vrm.humanoid.getRawBoneNode('leftUpperArm')
-        const rightUpperArm = vrm.humanoid.getRawBoneNode('rightUpperArm')
-        const leftLowerArm = vrm.humanoid.getRawBoneNode('leftLowerArm')
-        const rightLowerArm = vrm.humanoid.getRawBoneNode('rightLowerArm')
-        const leftHand = vrm.humanoid.getRawBoneNode('leftHand')
-        const rightHand = vrm.humanoid.getRawBoneNode('rightHand')
-        
-        if (leftUpperArm) {
-          leftUpperArm.rotation.z = -0.2  // Arms down and slightly forward
-          leftUpperArm.rotation.x = 0.1   
-        }
-        if (rightUpperArm) {
-          rightUpperArm.rotation.z = 0.2   
-          rightUpperArm.rotation.x = 0.1   
-        }
-        if (leftLowerArm) {
-          leftLowerArm.rotation.z = 0.3    // Natural elbow bend
-        }
-        if (rightLowerArm) {
-          rightLowerArm.rotation.z = -0.3   
-        }
-        if (leftHand) {
-          leftHand.rotation.z = 0.1        // Slightly relaxed hands
-        }
-        if (rightHand) {
-          rightHand.rotation.z = -0.1
-        }
-        
-        // Slight forward lean for more natural pose
-        const spine = vrm.humanoid.getRawBoneNode('spine')
-        if (spine) spine.rotation.x = 0.05
-        
-        // Head position
-        const head = vrm.humanoid.getRawBoneNode('head')
-        if (head) {
-          head.rotation.x = -0.1 // Slightly looking down (more natural)
-        }
-        
-        // CRITICAL: Update humanoid after setting bone rotations
-        vrm.humanoid.update();
-        
-        console.log('Natural pose applied successfully!')
-      } else {
-        console.warn('VRM humanoid not available - cannot apply natural pose')
+        setupNaturalPose(vrm, VRMHumanBoneName)
       }
 
-      // Update VRM to apply bone changes
-      vrm.update(0.016); // 60fps
+      // Initialize expressions
+      if (vrm.expressionManager) {
+        // Reset all expressions
+        const expressions = ['neutral', 'happy', 'sad', 'angry', 'surprised', 'relaxed', 'blink']
+        expressions.forEach(expr => {
+          try {
+            vrm.expressionManager.setValue(expr, 0)
+          } catch {}
+        })
+      }
 
       // Add to scene
       if (sceneRef.current) {
@@ -243,6 +206,9 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
         
         sceneRef.current.add(vrm.scene)
         vrmRef.current = vrm
+        
+        // Store VRMHumanBoneName for animations
+        vrmRef.current.VRMHumanBoneName = VRMHumanBoneName
       }
 
       setIsLoading(false)
@@ -253,129 +219,337 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
     }
   }
 
-  const updateVRMAnimations = () => {
-    if (!vrmRef.current) return
+  const setupNaturalPose = (vrm: any, VRMHumanBoneName: any) => {
+    try {
+      // Reset all bones first
+      Object.values(VRMHumanBoneName).forEach((boneName: any) => {
+        const bone = vrm.humanoid.getNormalizedBoneNode(boneName)
+        if (bone) {
+          bone.rotation.set(0, 0, 0)
+        }
+      })
 
-    const vrm = vrmRef.current
-    const time = performance.now() * 0.001
-
-    // Update VRM (required for animations)
-    vrm.update(1 / 60)
-
-    // Apply emotion-based expressions
-    if (vrm.expressionManager) {
-      // Reset all expressions
-      vrm.expressionManager.setValue('happy', 0)
-      vrm.expressionManager.setValue('sad', 0)
-      vrm.expressionManager.setValue('surprised', 0)
-      vrm.expressionManager.setValue('angry', 0)
-
-      // Apply current emotion
-      switch (emotion) {
-        case 'happy':
-        case 'excited':
-          vrm.expressionManager.setValue('happy', 0.8)
-          break
-        case 'thoughtful':
-          vrm.expressionManager.setValue('surprised', 0.3)
-          break
-        case 'encouraging':
-          vrm.expressionManager.setValue('happy', 0.6)
-          break
-        default:
-          // Neutral expression with subtle smile
-          vrm.expressionManager.setValue('happy', 0.1)
-          break
+      // Get arm and hand bones
+      const leftUpperArm = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftUpperArm)
+      const rightUpperArm = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightUpperArm)
+      const leftLowerArm = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftLowerArm)
+      const rightLowerArm = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightLowerArm)
+      const leftHand = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftHand)
+      const rightHand = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightHand)
+      
+      // Natural pose with hands at waist level (proper values for 180° rotation)
+      if (leftUpperArm) {
+        leftUpperArm.rotation.z = Math.PI * 0.35   // More down angle to lower arms
+        leftUpperArm.rotation.x = 0.4   // Forward bend for waist position
+        leftUpperArm.rotation.y = 0.5   // Inward rotation for hands on waist
       }
+      if (rightUpperArm) {
+        rightUpperArm.rotation.z = -Math.PI * 0.35  // More down angle to lower arms
+        rightUpperArm.rotation.x = 0.4
+        rightUpperArm.rotation.y = -0.5  // Inward rotation for hands on waist
+      }
+      
+      // Elbow bend to bring hands to waist level (proper values)
+      if (leftLowerArm) {
+        leftLowerArm.rotation.y = -0.6   // Bring closer to body
+        leftLowerArm.rotation.x = 0.0    // No forward angle
+        leftLowerArm.rotation.z = 0.5    // Inward rotation to bring closer
+      }
+      if (rightLowerArm) {
+        rightLowerArm.rotation.y = 0.6    // Bring closer to body
+        rightLowerArm.rotation.x = 0.0    // No forward angle
+        rightLowerArm.rotation.z = -0.5   // Inward rotation to bring closer
+      }
+      
+      // Hand position at waist - touching waist area (proper orientation)
+      if (leftHand) {
+        leftHand.rotation.z = 0.1        // Slight wrist adjustment
+        leftHand.rotation.x = -0.2       // Hand facing naturally
+        leftHand.rotation.y = 0.8        // Inward turn to touch waist
+      }
+      if (rightHand) {
+        rightHand.rotation.z = -0.1      // Slight wrist adjustment
+        rightHand.rotation.x = -0.2      // Hand facing naturally
+        rightHand.rotation.y = -0.8      // Inward turn to touch waist
+      }
+      
+      // Natural posture - confident standing
+      const spine = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Spine)
+      const chest = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Chest)
+      const upperChest = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.UpperChest)
+      const neck = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Neck)
+      const head = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Head)
+      const hips = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Hips)
+      
+      if (spine) spine.rotation.x = 0.03   // Slightly straighter posture
+      if (chest) chest.rotation.x = 0.02
+      if (upperChest) upperChest.rotation.x = 0.01
+      if (neck) neck.rotation.x = -0.02
+      if (head) {
+        head.rotation.x = 0.02
+        head.rotation.y = 0  // Look straight ahead
+      }
+      if (hips) {
+        hips.position.y = 0  // Normal hip height
+      }
+      
+      // Update the humanoid system
+      vrm.humanoid.update()
+      
+      // Start greeting animation
+      setIsGreeting(true)
+      greetingStartTimeRef.current = performance.now() * 0.001
+      
+    } catch (error) {
+      console.warn('Error setting up natural pose:', error)
+    }
+  }
 
-      // Blinking animation
-      const blinkCycle = time * 0.8
-      const blinkIntensity = Math.sin(blinkCycle) > 0.85 ? 1 : 0
-      vrm.expressionManager.setValue('blink', blinkIntensity)
+  const updateVRMAnimations = (deltaTime: number) => {
+    const vrm = vrmRef.current
+    if (!vrm || !vrm.VRMHumanBoneName) return
 
-      // Add thinking animation (subtle head movement)
-      if (isThinking) {
-        const headBone = vrm.humanoid?.getRawBoneNode('head')
-        if (headBone) {
-          headBone.rotation.y = Math.sin(time * 2) * 0.1
-          headBone.rotation.x = Math.sin(time * 1.5) * 0.05
+    const time = performance.now() * 0.001
+    const VRMHumanBoneName = vrm.VRMHumanBoneName
+
+    // Check if greeting animation should stop (after 3 seconds)
+    if (isGreeting && greetingStartTimeRef.current && (time - greetingStartTimeRef.current) > 3) {
+      setIsGreeting(false)
+      greetingStartTimeRef.current = null
+    }
+
+    // Animation parameters
+    const breathSpeed = isThinking ? 3 : 2  // Faster breathing when thinking
+    const swayAmount = 0.01
+    const headMoveAmount = isThinking ? 0.15 : 0.08
+
+    if (vrm.humanoid) {
+      // Get bones
+      const chest = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Chest)
+      const spine = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Spine)
+      const head = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Head)
+      const neck = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Neck)
+      const hips = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Hips)
+      
+      // Breathing animation
+      if (chest) {
+        chest.rotation.x = 0.02 + Math.sin(time * breathSpeed) * 0.015
+      }
+      if (spine) {
+        spine.rotation.x = 0.03 + Math.sin(time * breathSpeed + 0.5) * 0.008
+      }
+      
+      // Head movements
+      if (head) {
+        if (isGreeting && greetingStartTimeRef.current) {
+          // Greeting head movement - friendly nod
+          const greetingTime = time - greetingStartTimeRef.current
+          head.rotation.x = 0.02 + Math.sin(greetingTime * 4) * 0.15
+          head.rotation.y = Math.sin(greetingTime * 2) * 0.1
+          head.rotation.z = Math.sin(greetingTime * 3) * 0.05
+        } else if (isThinking) {
+          // Looking around when thinking
+          head.rotation.x = 0.02 + Math.sin(time * 1.5) * 0.1
+          head.rotation.y = Math.sin(time * 1.2) * 0.25
+          head.rotation.z = Math.sin(time * 1.8) * 0.05
+        } else {
+          // Natural idle head movement
+          head.rotation.x = 0.02 + Math.sin(time * 0.7) * 0.05
+          head.rotation.y = Math.sin(time * 0.5) * headMoveAmount
+          head.rotation.z = Math.sin(time * 0.9) * 0.02
+        }
+      }
+      
+      // Subtle neck movement
+      if (neck) {
+        neck.rotation.x = -0.02 + Math.sin(time * 0.8 + 1) * 0.015
+        neck.rotation.y = Math.sin(time * 0.6) * 0.02
+      }
+      
+      // Very subtle body sway
+      if (hips) {
+        hips.position.x = Math.sin(time * 0.4) * swayAmount
+        hips.position.y = Math.sin(time * 0.8) * 0.003
+        hips.rotation.y = Math.sin(time * 0.3) * 0.01
+      }
+      
+      // Arm animations - greeting wave or natural position
+      const leftUpperArm = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftUpperArm)
+      const rightUpperArm = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightUpperArm)
+      const leftLowerArm = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftLowerArm)
+      const rightLowerArm = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightLowerArm)
+      const leftHand = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftHand)
+      const rightHand = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightHand)
+      
+      if (isGreeting && greetingStartTimeRef.current) {
+        // Greeting animation - right hand waving HIGH AND VISIBLE
+        const greetingTime = time - greetingStartTimeRef.current
+        const waveProgress = Math.min(greetingTime / 3, 1) // 3 second greeting
+        
+        // Right arm waving motion - PROPER UPWARD LIFTING AND OUTWARD WAVING
+        if (rightUpperArm) {
+          // Raise arm HIGH and OUT for proper greeting wave
+          rightUpperArm.rotation.z = -Math.PI * 0.7 // RAISED HIGH ARM  
+          rightUpperArm.rotation.x = -0.2 // Slightly backward to lift arm up and out
+          rightUpperArm.rotation.y = -0.8 + Math.sin(greetingTime * 5) * 0.3  // More outward, away from body
+        }
+        if (rightLowerArm) {
+          // Elbow movement for proper waving - UP AND OUT
+          rightLowerArm.rotation.y = -0.3 + Math.sin(greetingTime * 8) * 0.4 // Outward waving motion
+          rightLowerArm.rotation.x = -0.3  // Upward elbow position
+          rightLowerArm.rotation.z = -0.1  // Slight outward orientation
+        }
+        if (rightHand) {
+          // Hand waving motion - UP AND OUTWARD
+          rightHand.rotation.z = -0.2 + Math.sin(greetingTime * 10) * 0.4 // Upward waving
+          rightHand.rotation.x = 0.1   // Hand facing upward
+          rightHand.rotation.y = -0.3 + Math.sin(greetingTime * 8) * 0.3 // Outward waving
+        }
+        
+        // Left arm stays at waist (casual pose during greeting) - PROPER VALUES
+        if (leftUpperArm) {
+          leftUpperArm.rotation.z = Math.PI * 0.35
+          leftUpperArm.rotation.x = 0.4   // Forward bend
+          leftUpperArm.rotation.y = 0.5   // Inward rotation
+        }
+        if (leftLowerArm) {
+          leftLowerArm.rotation.y = -0.6  // Toward body
+          leftLowerArm.rotation.x = 0.0
+          leftLowerArm.rotation.z = 0.5   // Inward rotation
+        }
+        if (leftHand) {
+          leftHand.rotation.z = 0.1       // Slight wrist adjustment
+          leftHand.rotation.x = -0.2      // Hand facing naturally
+          leftHand.rotation.y = 0.8       // Inward turn to touch waist
         }
       } else {
-        // Idle head movement
-        const headBone = vrm.humanoid?.getRawBoneNode('head')
-        if (headBone) {
-          headBone.rotation.y = Math.sin(time * 0.3) * 0.05
-          headBone.rotation.x = Math.sin(time * 0.2) * 0.02
+        // Normal standing pose with hands at waist - PROPER VALUES FOR 180° ROTATION
+        if (leftUpperArm) {
+          leftUpperArm.rotation.z = Math.PI * 0.35 + Math.sin(time * 0.5) * 0.005  // Gentle movement
+          leftUpperArm.rotation.x = 0.4 + Math.sin(time * 0.4) * 0.005
+          leftUpperArm.rotation.y = 0.5 + Math.sin(time * 0.3) * 0.01
+        }
+        if (rightUpperArm) {
+          rightUpperArm.rotation.z = -Math.PI * 0.35 + Math.sin(time * 0.5 + Math.PI) * 0.005
+          rightUpperArm.rotation.x = 0.4 + Math.sin(time * 0.4 + Math.PI) * 0.005
+          rightUpperArm.rotation.y = -0.5 + Math.sin(time * 0.3 + Math.PI) * 0.01
+        }
+        if (leftLowerArm) {
+          leftLowerArm.rotation.y = -0.6 + Math.sin(time * 0.6) * 0.01  // Bring closer to body
+          leftLowerArm.rotation.x = 0.0 + Math.sin(time * 0.7) * 0.005   // No forward angle
+          leftLowerArm.rotation.z = 0.5 + Math.sin(time * 0.7) * 0.005   // Inward rotation to bring closer
+        }
+        if (rightLowerArm) {
+          rightLowerArm.rotation.y = 0.6 + Math.sin(time * 0.6 + Math.PI) * 0.01  // Bring closer to body
+          rightLowerArm.rotation.x = 0.0 + Math.sin(time * 0.7 + Math.PI) * 0.005  // No forward angle
+          rightLowerArm.rotation.z = -0.5 + Math.sin(time * 0.7 + Math.PI) * 0.005 // Inward rotation to bring closer
+        }
+        
+        // Natural hand position at waist - PROPER VALUES
+        if (leftHand) {
+          leftHand.rotation.z = 0.1 + Math.sin(time * 0.8) * 0.005      // Slight wrist adjustment
+          leftHand.rotation.x = -0.2 + Math.sin(time * 0.6) * 0.005     // Hand facing naturally
+          leftHand.rotation.y = 0.8 + Math.sin(time * 0.4) * 0.005      // Inward turn to touch waist
+        }
+        if (rightHand) {
+          rightHand.rotation.z = -0.1 + Math.sin(time * 0.8 + Math.PI) * 0.005  // Slight wrist adjustment
+          rightHand.rotation.x = -0.2 + Math.sin(time * 0.6 + Math.PI) * 0.005  // Hand facing naturally
+          rightHand.rotation.y = -0.8 + Math.sin(time * 0.4 + Math.PI) * 0.005  // Inward turn to touch waist
         }
       }
       
       // Update humanoid after bone changes
-      vrm.humanoid.update();
+      vrm.humanoid.update()
     }
 
-    // Subtle breathing animation
-    if (vrm.scene) {
-      vrm.scene.scale.y = 1 + Math.sin(time * 1.2) * 0.008 // Slower, more natural breathing
-      
-      // Slight chest movement for breathing
-      const chest = vrm.humanoid?.getRawBoneNode('chest')
-      if (chest) {
-        chest.rotation.x = Math.sin(time * 1.2) * 0.02
-      }
-    }
-
-    // Subtle idle body movement for more natural pose
-    if (vrm.humanoid && !isThinking) {
-      const spine = vrm.humanoid.getRawBoneNode('spine')
-      if (spine) {
-        spine.rotation.y = Math.sin(time * 0.5) * 0.02
-        spine.rotation.x = 0.1 + Math.sin(time * 0.4) * 0.01
-      }
-
-      // Subtle arm sway
-      const leftUpperArm = vrm.humanoid.getRawBoneNode('leftUpperArm')
-      const rightUpperArm = vrm.humanoid.getRawBoneNode('rightUpperArm')
-      if (leftUpperArm) {
-        leftUpperArm.rotation.z = -0.5 + Math.sin(time * 0.6) * 0.05
-      }
-      if (rightUpperArm) {
-        rightUpperArm.rotation.z = 0.5 + Math.sin(time * 0.7) * 0.05
+    // Facial expressions and blinking
+    if (vrm.expressionManager) {
+      // Reset expressions safely
+      const resetExpression = (name: string) => {
+        try {
+          vrm.expressionManager.setValue(name, 0)
+        } catch {}
       }
       
-      // Update humanoid after idle movements
-      vrm.humanoid.update();
+      resetExpression('happy')
+      resetExpression('sad')
+      resetExpression('angry')
+      resetExpression('surprised')
+      resetExpression('relaxed')
+
+      // Apply emotion-based expression
+      try {
+        switch (emotion) {
+          case 'happy':
+          case 'excited':
+            vrm.expressionManager.setValue('happy', 0.7)
+            break
+          case 'sad':
+            vrm.expressionManager.setValue('sad', 0.6)
+            break
+          case 'thoughtful':
+          case 'confused':
+            vrm.expressionManager.setValue('surprised', 0.3)
+            break
+          case 'encouraging':
+            vrm.expressionManager.setValue('happy', 0.5)
+            break
+          default:
+            vrm.expressionManager.setValue('happy', 0.15) // Slight smile
+        }
+      } catch (e) {
+        // Silently handle if expression doesn't exist
+      }
+
+      // Natural blinking
+      try {
+        const blinkCycle = Math.sin(time * 4) > 0.98 || Math.sin(time * 4.7) > 0.99
+        vrm.expressionManager.setValue('blink', blinkCycle ? 1 : 0)
+      } catch {}
+      
+      // Update expressions
+      vrm.expressionManager.update()
     }
+
+    // Update VRM
+    vrm.update(deltaTime)
   }
 
-  // Fallback placeholder when VRM is not available
+  // Improved placeholder
   const renderPlaceholder = () => {
     const config = characterConfig[characterId]
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <div className={`text-6xl mb-4 ${isThinking ? 'animate-bounce' : ''}`}>
+        <div className={`text-8xl mb-4 ${isThinking ? 'animate-pulse' : 'animate-bounce'}`}>
           {config.flag}
         </div>
-        <div className="text-center text-slate-400">
-          <p className="text-sm mb-2">3D Character Model</p>
-          {hasError ? (
-            <div className="text-xs">
-              <p>VRM file not found</p>
-              <p>Place {characterId}.vrm in:</p>
-              <p className="font-mono">public/models/{characterId}/</p>
+        <div className="text-center">
+          <p className="text-lg font-semibold text-gray-700 mb-2">
+            {characterId === 'maria' ? 'María González' : 'Akira Tanaka'}
+          </p>
+          {isLoading && (
+            <div className="flex items-center justify-center gap-2">
+              <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+              <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+              <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
             </div>
-          ) : isLoading ? (
-            <p className="text-xs">Loading VRM model...</p>
-          ) : null}
+          )}
+          {hasError && (
+            <div className="text-sm text-red-500 mt-2">
+              <p>Unable to load 3D model</p>
+              <p className="text-xs text-gray-500 mt-1">Place VRM file in: public/models/{characterId}/</p>
+            </div>
+          )}
         </div>
       </div>
     )
   }
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative w-full h-full ${className || ''}`} style={{ minHeight: '600px' }}>
       <div 
         ref={mountRef} 
-        className="w-full h-full"
+        className="absolute inset-0"
         style={{ background: 'transparent' }}
       />
       {(isLoading || hasError) && renderPlaceholder()}

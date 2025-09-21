@@ -10,7 +10,7 @@ import { CharacterAIService } from "../services/characterAI.service";
 import { VrmAnimationService } from "../services/vrmAnimation.service";
 import { CulturalContextService } from "../services/culturalContext.service";
 import { TranslationService } from "../services/translation.service";
-import { ElevenLabsService } from "../services/elevenlabs.service";
+import { GeminiAudioStreamService } from "../services/geminiAudio.service";
 
 const emotionService = new EmotionAnalysisService();
 const languageService = new MultiLanguageDetectionService();
@@ -18,7 +18,7 @@ const characterAI = new CharacterAIService();
 const vrmAnimation = new VrmAnimationService();
 const culturalContext = new CulturalContextService();
 const translation = new TranslationService();
-const voiceService = new ElevenLabsService();
+const geminiAudioService = new GeminiAudioStreamService();
 
 export const getHistory = async (req: Request, res: Response) => {
   try {
@@ -237,14 +237,11 @@ export const sendMessage = async (req: Request, res: Response) => {
       console.warn('Animation generation failed:', animError);
     }
 
-    // Generate voice with lip-sync
+    // Audio will be streamed via WebSocket in real-time
     let voiceData = null;
     try {
-      voiceData = await voiceService.generateWithLipSync(
-        characterResponse,
-        session.characterId as 'maria' | 'akira',
-        emotions[0]?.emotion || 'neutral'
-      );
+      // Gemini audio streaming happens in WebSocket handlers
+      console.log('Audio streaming prepared for Gemini 2.5');
     } catch (voiceError) {
       console.warn('Voice generation failed:', voiceError);
     }

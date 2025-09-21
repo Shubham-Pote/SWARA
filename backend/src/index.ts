@@ -39,16 +39,26 @@ app.set("io", io);                            // expose to controllers
 // Global middleware
 // ────────────────────────────────────────────────────────────
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:5173", "http://localhost:8080", "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:8080"],
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  origin: ["http://localhost:8080", "http://localhost:3000", "http://127.0.0.1:8080"],
   credentials: true,
-  allowedHeaders: ["Content-Type", "Authorization"]
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"]
 }));
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false
+}));
 app.use(express.json());
 
-// Static audio (lesson mp3/ogg)
-app.use("/audio", express.static(path.join(__dirname, "../public/audio")));
+// Static audio (lesson mp3/ogg + generated TTS)
+app.use("/audio", express.static(path.join(__dirname, "../public/audio"), {
+  setHeaders: (res, path) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Content-Type', 'audio/wav');
+  }
+}));
 
 // ────────────────────────────────────────────────────────────
 // Welcome
@@ -67,15 +77,14 @@ app.get("/", (_req, res) =>
 // ────────────────────────────────────────────────────────────
 // REST routes
 // ────────────────────────────────────────────────────────────
-app.use("/api/auth",      authRoutes);
-app.use("/api/lessons",   lessonRoutes);
-app.use("/api/notes",     notesRoutes);
-app.use("/api/reading",   readingArticleRoutes);
+app.use("/api/auth",     authRoutes);
+app.use("/api/lessons",  lessonRoutes);
+app.use("/api/notes",    notesRoutes);
+app.use("/api/reading",  readingArticleRoutes);
 
-// Character routes enabled for authentication endpoints
-app.use("/api/character", characterRoutes);
+// Character routes disabled - using WebSocket only
+// app.use("/api/character", characterRoutes);
 app.use("/api/settings",  settingsRoutes);
-app.use("/api/vrm",       vrmRoutes);
 app.use("/api/vrm",       vrmRoutes);
 
 // ────────────────────────────────────────────────────────────

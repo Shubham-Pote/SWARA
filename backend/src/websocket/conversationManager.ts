@@ -50,7 +50,17 @@ export class ConversationManager {
   }
 
   async getCurrentSession(userId: string) {
-    return await this.getOrCreateSession(userId);
+    // Always fetch fresh from database to avoid stale data
+    let session = await CharacterSession.findOne({ userId: userId });
+    if (!session) {
+      session = await CharacterSession.create({
+        userId: userId,
+        characterId: "maria", // default character
+        language: "es", // default María's language
+        isActive: true // Ensure isActive is set
+      });
+    }
+    return session;
   }
 
   /* -------------------- helpers -------------------- */

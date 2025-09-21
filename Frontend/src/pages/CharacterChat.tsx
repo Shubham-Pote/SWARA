@@ -9,7 +9,6 @@ import { characterSocketService } from '@/services/characterSocket.service';
 import type { Character, Message } from '@/types/character';
 import { toast } from '@/hooks/use-toast';
 import { Mic, MicOff, Settings, MessageCircle } from 'lucide-react';
-import * as wanakana from 'wanakana';
 
 export default function CharacterChat() {
   const { characterId } = useParams<{ characterId: string }>();
@@ -27,29 +26,9 @@ export default function CharacterChat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const audioChunksRef = useRef<{ [key: string]: string }>({});
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const speechRecognitionRef = useRef<any>(null);
-
-  // Initialize speech recognition
-  const initializeSpeechRecognition = () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      console.warn('Speech recognition not supported in this browser');
-      return null;
-    }
-
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    
-    // Set language based on character
-    const language = characterId === 'akira' ? 'ja-JP' : 'es-ES';
-    recognition.lang = language;
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-
-    return recognition;
-  };
 
   // Debug authentication
   console.log('CharacterChat - User:', user, 'Character ID:', characterId);
@@ -134,19 +113,6 @@ export default function CharacterChat() {
         if (selectedCharacter) {
           setCharacter(selectedCharacter);
           console.log('Character loaded:', selectedCharacter);
-          
-          // Initialize audio element for voice playback
-          if (!audioRef.current) {
-            audioRef.current = new Audio();
-            audioRef.current.crossOrigin = 'anonymous';
-            audioRef.current.preload = 'metadata';
-            
-            // Add event listeners for audio debugging
-            audioRef.current.addEventListener('loadstart', () => console.log('Audio: Load started'));
-            audioRef.current.addEventListener('loadedmetadata', () => console.log('Audio: Metadata loaded'));
-            audioRef.current.addEventListener('canplay', () => console.log('Audio: Can play'));
-            audioRef.current.addEventListener('error', (e) => console.error('Audio error:', e));
-          }
           
           // Switch character in WebSocket service
           characterSocketService.switchCharacter(characterId as 'maria' | 'akira');
@@ -260,59 +226,94 @@ export default function CharacterChat() {
       setCurrentEmotion(data.emotion);
     };
 
-    const handleVoiceAudio = async (data: { 
+    const handleVoiceAudio = (data: { 
       audioUrl: string; 
       text: string; 
-      emotion: string 
+      characterId: string;
+      emotion: string;
+      duration?: number;
     }) => {
-      try {
-        console.log('Received voice audio data:', data);
+      console.log('🎵 Received voice_audio event:', data);
+      
+      // Play character voice audio directly from Gemini TTS
+      if (audioRef.current && data.audioUrl) {
+        const fullUrl = data.audioUrl.startsWith('http') 
+          ? data.audioUrl 
+          : `http://localhost:5000${data.audioUrl}`;
+          
+        console.log('🔗 Playing Gemini TTS audio:', fullUrl);
         
-        // Validate audio URL
-        if (!data.audioUrl) {
-          console.warn('No audio URL provided');
-          return;
-        }
+        audioRef.current.src = fullUrl;
+        audioRef.current.volume = 0.8;
+        audioRef.current.play()
+          .then(() => {
+            console.log(`✅ Audio playback started for ${data.characterId}`);
+          })
+          .catch(error => {
+            console.error('❌ Error playing Gemini TTS audio:', error);
+          });
+      } else {
+        console.warn('⚠️ No audio element or URL available');
+      }
+    };
 
-        // Create audio element if it doesn't exist
-        if (!audioRef.current) {
-          audioRef.current = new Audio();
-          audioRef.current.crossOrigin = 'anonymous';
-          audioRef.current.preload = 'metadata';
-        }
-
-        // Test if audio URL is accessible
+    const handleTTSRequest = (data: {
+      text: string;
+      characterId: string;
+      language: string;
+      voice: string;
+      emotion: string;
+      speed: number;
+    }) => {
+      console.log('🗣️ Received TTS request for Web Speech API:', data);
+      
+      // Use browser's Web Speech API for real speech synthesis
+      if ('speechSynthesis' in window) {
         try {
-          const response = await fetch(data.audioUrl, { method: 'HEAD' });
-          if (!response.ok) {
-            throw new Error(`Audio URL not accessible: ${response.status}`);
+          // Cancel any ongoing speech
+          window.speechSynthesis.cancel();
+          
+          const utterance = new SpeechSynthesisUtterance(data.text);
+          
+          // Configure voice based on character
+          utterance.lang = data.language;
+          utterance.rate = data.speed;
+          utterance.pitch = data.characterId === 'maria' ? 1.1 : 0.9;
+          utterance.volume = 0.8;
+          
+          // Try to find a suitable voice
+          const voices = window.speechSynthesis.getVoices();
+          const preferredVoice = voices.find(voice => 
+            voice.lang.startsWith(data.language.split('-')[0]) && voice.name.toLowerCase().includes('female')
+          ) || voices.find(voice => 
+            voice.lang.startsWith(data.language.split('-')[0])
+          ) || voices[0];
+          
+          if (preferredVoice) {
+            utterance.voice = preferredVoice;
+            console.log(`🎙️ Using voice: ${preferredVoice.name} (${preferredVoice.lang})`);
           }
           
-          console.log('Audio URL is accessible:', data.audioUrl);
-          console.log('Content-Type:', response.headers.get('content-type'));
-        } catch (fetchError) {
-          console.error('Audio URL fetch failed:', fetchError);
-          return;
+          utterance.onstart = () => {
+            console.log(`🗣️ Started speaking for ${data.characterId}`);
+          };
+          
+          utterance.onend = () => {
+            console.log(`✅ Finished speaking for ${data.characterId}`);
+          };
+          
+          utterance.onerror = (error) => {
+            console.error('❌ Speech synthesis error:', error);
+          };
+          
+          // Speak the text
+          window.speechSynthesis.speak(utterance);
+          
+        } catch (error) {
+          console.error('❌ Web Speech API error:', error);
         }
-
-        // Set audio source and play
-        audioRef.current.src = data.audioUrl;
-        audioRef.current.currentTime = 0;
-        
-        const playPromise = audioRef.current.play();
-        if (playPromise !== undefined) {
-          await playPromise;
-          console.log('Audio playing successfully');
-        }
-      } catch (error) {
-        console.error('Error playing voice audio:', error);
-        console.error('Audio URL:', data.audioUrl);
-        console.error('Audio element state:', {
-          src: audioRef.current?.src,
-          readyState: audioRef.current?.readyState,
-          networkState: audioRef.current?.networkState,
-          error: audioRef.current?.error
-        });
+      } else {
+        console.warn('⚠️ Web Speech API not supported in this browser');
       }
     };
 
@@ -332,6 +333,7 @@ export default function CharacterChat() {
     characterSocketService.on('character_response', handleCharacterResponse);
     characterSocketService.on('vrm_animation', handleVrmAnimation);
     characterSocketService.on('voice_audio', handleVoiceAudio);
+    characterSocketService.on('tts_request', handleTTSRequest);
     characterSocketService.on('error', handleError);
 
     return () => {
@@ -343,6 +345,7 @@ export default function CharacterChat() {
       characterSocketService.off('character_response', handleCharacterResponse);
       characterSocketService.off('vrm_animation', handleVrmAnimation);
       characterSocketService.off('voice_audio', handleVoiceAudio);
+      characterSocketService.off('tts_request', handleTTSRequest);
       characterSocketService.off('error', handleError);
     };
   }, [sessionId]);
@@ -405,104 +408,59 @@ export default function CharacterChat() {
 
   const startRecording = async () => {
     try {
-      // Initialize speech recognition
-      const recognition = initializeSpeechRecognition();
-      if (!recognition) {
-        toast({
-          title: 'Not Supported',
-          description: 'Speech recognition not available in this browser',
-          variant: 'destructive',
-        });
-        return;
-      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      recordingChunksRef.current = [];
 
-      speechRecognitionRef.current = recognition;
-      let finalTranscript = '';
-
-      recognition.onresult = (event: any) => {
-        let interimTranscript = '';
-        
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-        
-        // Update input with interim results for visual feedback
-        if (interimTranscript) {
-          let displayText = finalTranscript + interimTranscript;
-          
-          // For Japanese interim results, convert to romaji for better UX
-          if (characterId === 'akira' && interimTranscript) {
-            if (wanakana.isJapanese(interimTranscript)) {
-              const romajiText = wanakana.toRomaji(interimTranscript);
-              displayText = finalTranscript + romajiText;
-            }
-          }
-          
-          setInput(displayText);
-        }
+      mediaRecorder.ondataavailable = (event) => {
+        recordingChunksRef.current.push(event.data);
       };
 
-      recognition.onend = () => {
-        console.log('Speech recognition ended');
-        setIsRecording(false);
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(recordingChunksRef.current, { type: 'audio/wav' });
         
-        if (finalTranscript.trim()) {
-          let displayText = finalTranscript.trim();
+        try {
+          // For now, convert voice to text placeholder and send via WebSocket
+          // In future, implement speech-to-text here
+          const transcribedText = "Voice message (transcription not implemented yet)";
           
-          // Convert Japanese text to romaji for language learning
-          if (characterId === 'akira' && wanakana.isJapanese(finalTranscript.trim())) {
-            displayText = wanakana.toRomaji(finalTranscript.trim());
-            console.log('Converted Japanese to romaji:', {
-              original: finalTranscript.trim(),
-              romaji: displayText
-            });
-          }
-          
-          // Send the transcribed message (using converted romaji for Japanese)
+          // Add user message to UI
           const userMessage: Message = {
             _id: 'voice-user-' + Date.now(),
             conversationId: 'temp-session',
             sender: 'user',
-            content: displayText,
+            content: transcribedText,
             createdAt: new Date().toISOString()
           };
           setMessages(prev => [...prev, userMessage]);
-          characterSocketService.sendMessage(displayText);
-          setInput('');
+          
+          // Send via WebSocket  
+          characterSocketService.sendMessage(transcribedText);
+          
+        } catch (error) {
+          toast({
+            title: 'Error',
+            description: 'Failed to send voice message',
+            variant: 'destructive',
+          });
         }
       };
 
-      recognition.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
-        setIsRecording(false);
-        toast({
-          title: 'Recognition Error',
-          description: `Speech recognition failed: ${event.error}`,
-          variant: 'destructive',
-        });
-      };
-
-      recognition.start();
+      mediaRecorder.start();
       setIsRecording(true);
-      
     } catch (error) {
-      console.error('Error starting recording:', error);
       toast({
         title: 'Error',
-        description: 'Failed to start voice recording',
+        description: 'Failed to start recording',
         variant: 'destructive',
       });
     }
   };
 
   const stopRecording = () => {
-    if (speechRecognitionRef.current && isRecording) {
-      speechRecognitionRef.current.stop();
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
   };
@@ -562,21 +520,20 @@ export default function CharacterChat() {
 
               {/* Messages Area */}
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {/* User Message */}
-                <div className="flex justify-end">
-                  <div className="bg-gray-100 rounded-2xl px-4 py-3 max-w-sm">
-                    <p className="text-sm text-gray-900">what is neural network</p>
-                  </div>
-                </div>
-
-                {/* Character Response */}
+                {/* Character Introduction */}
                 <div className="flex justify-start">
                   <div className="bg-black text-white rounded-2xl px-4 py-3 max-w-lg">
-                    <h4 className="font-medium text-white mb-2">CHARACTER</h4>
+                    <h4 className="font-medium text-white mb-2">
+                      {character?.name?.toUpperCase() || 'CHARACTER'}
+                    </h4>
                     <p className="text-sm leading-relaxed">
-                      A neural network is a type of machine learning model that's inspired by the way our brains work, 
-                      it's basically a computer program that can learn and improve at recognizing patterns in data, 
-                      like images or speech!
+                      {characterId === 'maria' ? (
+                        "¡Hola! I'm María González, your Spanish teacher from Mexico City! I'm here to help you learn Spanish through fun conversations about Mexican culture, food, and daily life. Feel free to ask me anything in English or Spanish - let's make learning enjoyable! 🇲🇽"
+                      ) : characterId === 'akira' ? (
+                        "Konnichiwa! I'm Akira Tanaka, your Japanese tutor from Tokyo. I specialize in teaching formal Japanese, business language, and cultural etiquette. Whether you're a beginner or intermediate learner, I'll guide you through the beautiful complexity of Japanese language and culture. 🇯🇵"
+                      ) : (
+                        "Hello! I'm your language learning assistant. I'm here to help you practice and improve your language skills through interactive conversations."
+                      )}
                     </p>
                   </div>
                 </div>
@@ -717,7 +674,7 @@ export default function CharacterChat() {
       
       {/* Footer Attribution */}
       <div className="text-center py-4 text-xs text-gray-500">
-        powered by <span className="font-medium">OpenRouter</span>, <span className="font-medium">ElevenLabs</span>, <span className="font-medium">VRoid</span>
+        powered by <span className="font-medium">OpenRouter</span>, <span className="font-medium">OpenAI TTS</span>, <span className="font-medium">VRoid</span>
       </div>
     </div>
   );
