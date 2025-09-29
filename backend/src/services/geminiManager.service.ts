@@ -1,7 +1,7 @@
 // Enhanced Gemini streaming & fallback
 import { GoogleGenerativeAI, GenerativeModel } from "@google/generative-ai";
 
-const MODEL_PRIMARY = "gemini-1.5-flash";  // Fix: Use correct model name
+const MODEL_PRIMARY = "gemini-2.0-flash";  // Fix: Use correct model name
 const MODEL_FALLBACK = "gemini-pro"; // Same as existing backend
 const MAX_RETRIES = 3;
 const CHUNK_DELIMITER = /(?<=[.!?])\s+/;             // sentence boundary
