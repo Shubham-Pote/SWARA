@@ -1,5 +1,4 @@
 // ALL language detection
-import { franc } from "franc-min";
 import { RomajiService } from "./romaji.service";
 import { SpanishSlangService } from "./spanishSlang.service";
 
@@ -11,6 +10,15 @@ interface LanguageDetection {
   confidence: number;
   script?: string;
   normalized?: string;
+}
+
+// Dynamic import for franc-min (ES Module)
+let francModule: any = null;
+async function getFranc() {
+  if (!francModule) {
+    francModule = await import('franc-min');
+  }
+  return francModule.franc;
 }
 
 export class MultiLanguageDetectionService {
@@ -55,6 +63,7 @@ export class MultiLanguageDetectionService {
       }
 
       // 4. Use franc for general language detection
+      const franc = await getFranc();
       const detectedLang = franc(text, { minLength: 3 });
       let language = 'english';
       let confidence = 0.6;
@@ -125,7 +134,7 @@ export class MultiLanguageDetectionService {
   /**
    * Legacy method for backward compatibility
    */
-  detect(text: string) {
+  async detect(text: string) {
     // 1. Romaji → Hiragana/Katakana
     const romajiConv = romaji.convertIfRomaji(text);
     if (romajiConv) return { language: "ja", normalized: romajiConv };
@@ -135,6 +144,7 @@ export class MultiLanguageDetectionService {
     if (normalizedSlang.changed) return { language: "es", normalized: normalizedSlang.text };
 
     // 3. Generic detection fallback
+    const franc = await getFranc();
     const lang = franc(text, { minLength: 3 });
     return { language: lang === "jpn" ? "ja" : lang === "spa" ? "es" : "en", normalized: text };
   }
