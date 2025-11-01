@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client'
 
-interface Message {
+export interface Message {
   id: string
   role: 'user' | 'character'
   content: string
