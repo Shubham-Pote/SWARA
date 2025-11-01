@@ -19,11 +19,25 @@ import vrmRoutes from "../src/routes/vrm.routes";
 // Load environment variables
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
-// Connect to database
-connectDB();
-
 // Create Express app
 const app = express();
+
+// Database connection state
+let isConnected = false;
+
+// Lazy database connection for serverless
+const ensureDBConnection = async () => {
+  if (!isConnected) {
+    try {
+      await connectDB();
+      isConnected = true;
+      console.log('✅ Database connected');
+    } catch (error) {
+      console.error('❌ Database connection failed:', error);
+      // Don't throw - allow app to respond with error
+    }
+  }
+};
 
 // Global middleware
 app.use(cors({
@@ -45,6 +59,12 @@ app.use(helmet({
 
 app.use(express.json());
 
+// Database connection middleware (only for routes that need it)
+const dbMiddleware = async (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  await ensureDBConnection();
+  next();
+};
+
 // Static audio files
 app.use("/audio", express.static(path.join(__dirname, "../public/audio"), {
   setHeaders: (res, path) => {
@@ -55,7 +75,7 @@ app.use("/audio", express.static(path.join(__dirname, "../public/audio"), {
   }
 }));
 
-// Welcome route
+// Welcome route (no DB needed)
 app.get("/", (_req, res) => {
   res.json({
     message: "Welcome to the Language Learning API",
@@ -69,26 +89,33 @@ app.get("/", (_req, res) => {
   })
 });
 
-// Health check endpoint
+// Health check endpoint (no DB needed)
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    dbConnected: isConnected
+  });
 });
 
-// CORS test endpoint
+// CORS test endpoint (no DB needed)
 app.get("/api/test", (_req, res) => {
   res.json({ 
     success: true, 
     message: "CORS is working!",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV || 'development'
   });
 });
 
-// REST routes
-app.use("/api/auth", authRoutes);
-app.use("/api/lessons", lessonRoutes);
-app.use("/api/notes", notesRoutes);
-app.use("/api/reading", readingArticleRoutes);
-app.use("/api/character", characterRoutes);
+// REST routes (with DB middleware)
+app.use("/api/auth", dbMiddleware, authRoutes);
+app.use("/api/lessons", dbMiddleware, lessonRoutes);
+app.use("/api/notes", dbMiddleware, notesRoutes);
+app.use("/api/reading", dbMiddleware, readingArticleRoutes);
+app.use("/api/character", dbMiddleware, characterRoutes);
+app.use("/api/settings", dbMiddleware, settingsRoutes);
+app.use("/api/vrm", dbMiddleware, vrmRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/vrm", vrmRoutes);
 
