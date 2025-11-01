@@ -56,7 +56,7 @@ const Auth: React.FC = () => {
     },
     quote: {
       text: "Welcome back! Continue your learning journey...",
-      author: "AI Learner"
+      author: "SWARA"
     }
   };
 
@@ -67,7 +67,7 @@ const Auth: React.FC = () => {
     },
     quote: {
       text: "A New Language, A New World...",
-      author: "AI Learner"
+      author: "SWARA"
     }
   };
 

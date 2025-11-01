@@ -144,7 +144,7 @@
         <section id="about" className="relative z-10 py-20 px-4">
           <div className="max-w-6xl mx-auto">
             <div className="text-center mb-16">
-              <h2 className="text-4xl md:text-5xl font-black text-white mb-6">Why AI Learner works</h2>
+              <h2 className="text-4xl md:text-5xl font-black text-white mb-6">Why SWARA works</h2>
               <p className="text-xl text-gray-300 max-w-2xl mx-auto">
                 Our AI-powered approach makes language learning effective, engaging, and fun
               </p>
@@ -391,7 +391,7 @@
             </div>
             <div className="border-t border-white/10 mt-8 pt-8 text-center text-gray-400">
               <p>
-                &copy; 2025 AI Learner. Made with <Heart className="w-4 h-4 inline text-red-500" /> for language learners.
+                &copy; 2025 SWARA. Made with <Heart className="w-4 h-4 inline text-red-500" /> for language learners.
               </p>
             </div>
           </div>

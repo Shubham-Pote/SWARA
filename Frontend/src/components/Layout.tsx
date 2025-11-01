@@ -22,7 +22,7 @@ const SidebarContent = () => {
 
   const links = [
     {
-      label: "AI Learner",
+      label: "SWARA",
       href: "/dashboard", // Or could be "/" for home
       icon: (
         <div className="flex items-center justify-center w-5 h-5">
