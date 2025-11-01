@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { authAPI } from '@/lib/api';
+import { authAPI, testConnection } from '@/lib/api';
 
 interface User {
   id: string;
@@ -106,6 +106,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (email: string, password: string) => {
     try {
       console.log('🔐 Login attempt for:', email);
+      
+      // Test connection first
+      try {
+        await testConnection();
+        console.log('✅ Backend connection verified');
+      } catch (connError) {
+        console.error('❌ Backend connection failed:', connError);
+        throw new Error('Cannot connect to server. Please check your internet connection.');
+      }
       
       const data = await authAPI.login({ email, password });
       

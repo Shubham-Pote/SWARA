@@ -17,6 +17,24 @@ console.log('🌐 API_BASE_URL:', API_BASE_URL);
 console.log('🔧 Environment:', import.meta.env.MODE);
 console.log('🔧 VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
 
+// Test API connection
+export const testConnection = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/test`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    const data = await response.json();
+    console.log('✅ API Connection Test:', data);
+    return data;
+  } catch (error) {
+    console.error('❌ API Connection Test Failed:', error);
+    throw error;
+  }
+};
+
 // Token management functions
 export const setToken = (token: string) => {
   localStorage.setItem('token', token);
