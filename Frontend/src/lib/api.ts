@@ -1,8 +1,21 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL 
-  ? `${import.meta.env.VITE_API_BASE_URL}/api` 
-  : '/api';  // Use Vite proxy in development
-console.log('API_BASE_URL:', API_BASE_URL);
-console.log('Environment:', import.meta.env.MODE);
+// Determine API base URL based on environment
+const getApiBaseUrl = () => {
+  // In production, use the environment variable or deployed backend
+  if (import.meta.env.PROD && import.meta.env.VITE_API_BASE_URL) {
+    return `${import.meta.env.VITE_API_BASE_URL}/api`;
+  }
+  // In development, use proxy
+  if (import.meta.env.DEV) {
+    return '/api';
+  }
+  // Fallback to production backend
+  return 'https://swara-lemon.vercel.app/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+console.log('🌐 API_BASE_URL:', API_BASE_URL);
+console.log('🔧 Environment:', import.meta.env.MODE);
+console.log('🔧 VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL);
 
 // Token management functions
 export const setToken = (token: string) => {
@@ -65,19 +78,31 @@ export const authAPI = {
     password: string;
     displayName: string;
   }) => {
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(userData),
-    });
+    console.log('📝 Attempting registration to:', `${API_BASE_URL}/auth/register`);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
 
-    if (!response.ok) {
-      throw new Error('Registration failed');
+      console.log('📡 Register response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Registration failed' }));
+        throw new Error(errorData.message || 'Registration failed');
+      }
+
+      const data = await response.json();
+      console.log('✅ Registration response received');
+      return data;
+    } catch (error: any) {
+      console.error('❌ Registration fetch error:', error);
+      throw new Error(error.message || 'Failed to connect to server');
     }
-
-    return await response.json();
   },
 
   // Login user
@@ -85,19 +110,31 @@ export const authAPI = {
     email: string;
     password: string;
   }) => {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(credentials),
-    });
+    console.log('🔐 Attempting login to:', `${API_BASE_URL}/auth/login`);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(credentials),
+      });
 
-    if (!response.ok) {
-      throw new Error('Login failed');
+      console.log('📡 Login response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Login failed' }));
+        throw new Error(errorData.message || 'Login failed');
+      }
+
+      const data = await response.json();
+      console.log('✅ Login response received');
+      return data;
+    } catch (error: any) {
+      console.error('❌ Login fetch error:', error);
+      throw new Error(error.message || 'Failed to connect to server');
     }
-
-    return await response.json();
   },
 
   // Get user profile
