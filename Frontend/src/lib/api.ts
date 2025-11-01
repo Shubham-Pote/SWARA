@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const API_BASE_URL = '/api';  // Use Vite proxy
 console.log('API_BASE_URL:', API_BASE_URL);
 
 // Token management functions
@@ -281,22 +281,32 @@ export const notesAPI = {
     section?: string;
     topic?: string;
     search?: string;
-  }) => {
+  } = {}) => {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
       if (value) queryParams.append(key, value);
     });
 
-    const response = await fetch(`${API_BASE_URL}/notes?${queryParams}`, {
+    const url = `${API_BASE_URL}/notes?${queryParams}`;
+    console.log('API: Fetching notes from:', url); // Debug log
+    console.log('API: With params:', params); // Debug log
+
+    const response = await fetch(url, {
       method: 'GET',
       headers: getAuthHeaders(),
     });
     
+    console.log('API: Get notes response status:', response.status, response.statusText); // Debug log
+    
     if (!response.ok) {
-      throw new Error('Failed to fetch notes');
+      const errorData = await response.json().catch(() => ({}));
+      console.error('API: Get notes error:', errorData); // Debug log
+      throw new Error(errorData.message || `Failed to fetch notes: ${response.status} ${response.statusText}`);
     }
     
-    return await response.json();
+    const responseData = await response.json();
+    console.log('API: Get notes success:', responseData); // Debug log
+    return responseData;
   },
 
   // Create note
@@ -304,20 +314,30 @@ export const notesAPI = {
     title: string;
     content: string;
     language: string;
-    topic: string;
-    tags: string[];
+    topic?: string;
+    tags?: string[];
   }) => {
+    console.log('API: Creating note with data:', noteData); // Debug log
+    console.log('API: Using URL:', `${API_BASE_URL}/notes`); // Debug log
+    console.log('API: Using headers:', getAuthHeaders()); // Debug log
+    
     const response = await fetch(`${API_BASE_URL}/notes`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(noteData),
     });
     
+    console.log('API: Response status:', response.status, response.statusText); // Debug log
+    
     if (!response.ok) {
-      throw new Error('Failed to create note');
+      const errorData = await response.json().catch(() => ({}));
+      console.error('API: Error response:', errorData); // Debug log
+      throw new Error(errorData.message || `Failed to create note: ${response.status} ${response.statusText}`);
     }
     
-    return await response.json();
+    const responseData = await response.json();
+    console.log('API: Success response:', responseData); // Debug log
+    return responseData;
   },
 
   // Generate AI notes
@@ -358,6 +378,26 @@ export const notesAPI = {
     
     if (!response.ok) {
       throw new Error('Failed to toggle star');
+    }
+    
+    return await response.json();
+  },
+
+  // Update note
+  updateNote: async (noteId: string, noteData: {
+    title?: string;
+    content?: string;
+    topic?: string;
+    tags?: string[];
+  }) => {
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(noteData),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to update note');
     }
     
     return await response.json();
@@ -560,6 +600,7 @@ export const characterAPI = {
   sendVoiceMessage: async (sessionId: string, audioFile: File) => {
     // For now, we'll just send a placeholder text message
     // In a real implementation, you'd convert speech to text first
+    console.log('Audio file received:', audioFile.name, audioFile.size);
     const placeholderText = "Voice message received";
     return await characterAPI.sendMessage(sessionId, placeholderText);
   },

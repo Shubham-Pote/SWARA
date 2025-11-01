@@ -2,17 +2,23 @@
   "version": 2,
   "builds": [
     {
-      "src": "backend/src/index.ts",
+      "src": "src/index.ts",
       "use": "@vercel/node"
     }
   ],
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "backend/src/index.ts"
+      "dest": "src/index.ts"
     }
   ],
   "env": {
     "NODE_ENV": "production"
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/src/index.ts"
+    }
+  ]
 }

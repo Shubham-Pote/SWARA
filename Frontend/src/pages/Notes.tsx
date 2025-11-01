@@ -4,7 +4,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { notesAPI, lessonsAPI } from "@/lib/api";
@@ -12,29 +11,18 @@ import {
   StickyNote, 
   Plus, 
   Search, 
-  BookOpen,
   Brain,
   Tag,
-  Calendar,
-  Edit,
   Trash2,
   Star,
+  StarOff,
   Loader2,
   X,
-  Eye,
   RefreshCw,
-  ChevronDown,
-  ChevronRight,
-  Filter,
-  Grid3X3,
-  List,
   Sparkles,
   Clock,
-  Zap,
-  Award,
   Hash,
   FileText,
-  Maximize2,
   Copy,
   Check
 } from "lucide-react";
@@ -45,15 +33,11 @@ interface Note {
   content: string;
   topic: string;
   tags: string[];
-  aiGenerated: boolean;
+  aiGenerated?: boolean;
   starred: boolean;
   createdAt: string;
+  updatedAt: string;
   language?: string;
-  lessonId?: {
-    _id: string;
-    title: string;
-    difficulty: string;
-  };
 }
 
 interface Lesson {
@@ -67,23 +51,19 @@ interface Lesson {
 }
 
 const Notes = () => {
-  const { user, switchLanguage } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
 
   // State management
   const [notes, setNotes] = useState<Note[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedTopic, setSelectedTopic] = useState("All");
-  const [selectedSection, setSelectedSection] = useState("all");
+  const [selectedTopic, setSelectedTopic] = useState("all");
   const [loading, setLoading] = useState(false);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
-  const [showAddNote, setShowAddNote] = useState(false);
+  const [isCreatingNote, setIsCreatingNote] = useState(false);
   const [showLessons, setShowLessons] = useState(false);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
-  const [viewMode, setViewMode] = useState<'masonry' | 'list'>('masonry');
-  const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set(['All']));
-  const [showFilters, setShowFilters] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const currentLanguage = user?.currentLanguage || "spanish";
@@ -93,7 +73,7 @@ const Notes = () => {
     title: "",
     content: "",
     language: currentLanguage,
-    topic: "Vocabulary",
+    topic: "",
     tags: [] as string[]
   });
   const [tagInput, setTagInput] = useState("");
@@ -112,18 +92,18 @@ const Notes = () => {
     "practice", "conversation", "writing", "reading", "listening"
   ];
 
-  // API functions (keeping existing logic)
+  // API functions
   const fetchNotes = async () => {
     setLoading(true);
     try {
       const params: any = { language: currentLanguage };
       if (searchTerm) params.search = searchTerm;
-      if (selectedTopic !== "All") params.topic = selectedTopic;
-      if (selectedSection !== "all") params.section = selectedSection;
+      if (selectedTopic !== "all") params.topic = selectedTopic;
 
       const data = await notesAPI.getNotes(params);
       setNotes(data.notes || []);
     } catch (error) {
+      console.error('Failed to fetch notes:', error);
       toast({
         title: "Error",
         description: "Failed to load notes",
@@ -158,24 +138,29 @@ const Notes = () => {
     }
 
     try {
-      await notesAPI.createNote(newNote);
-      toast({
-        title: "Success",
-        description: "Note created successfully!",
-      });
-      
-      setShowAddNote(false);
-      setNewNote({
-        title: "",
-        content: "",
+      const noteData = {
+        ...newNote,
         language: currentLanguage,
-        topic: "Vocabulary",
-        tags: []
-      });
-      setTagInput("");
+      };
+
+      const response = await notesAPI.createNote(noteData);
       
-      fetchNotes();
+      if (response && (response.note || response.data || response._id)) {
+        const createdNote = response.note || response.data || response;
+        
+        setNotes(prev => [createdNote, ...prev]);
+        setSelectedNote(createdNote);
+        setIsCreatingNote(false);
+        
+        toast({
+          title: "Success",
+          description: "Note created successfully!",
+        });
+        
+        resetForm();
+      }
     } catch (error) {
+      console.error('Failed to create note:', error);
       toast({
         title: "Error",
         description: "Failed to create note",
@@ -216,47 +201,23 @@ const Notes = () => {
     }
   };
 
-  const handleLanguageChange = async (newLanguage: string) => {
-    try {
-      await switchLanguage(newLanguage);
-      toast({
-        title: "Success",
-        description: `Switched to ${newLanguage === 'japanese' ? 'Japanese 🇯🇵' : 'Spanish 🇪🇸'}`,
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to switch language",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const addTag = (tag: string) => {
-    if (tag.trim() && !newNote.tags.includes(tag.trim()) && newNote.tags.length < 10) {
-      setNewNote({
-        ...newNote,
-        tags: [...newNote.tags, tag.trim()]
-      });
-    }
-    setTagInput("");
-  };
-
-  const removeTag = (tagToRemove: string) => {
-    setNewNote({
-      ...newNote,
-      tags: newNote.tags.filter(tag => tag !== tagToRemove)
-    });
-  };
-
-  const toggleStar = async (noteId: string, currentStarred: boolean) => {
+  const toggleStar = async (noteId: string) => {
     try {
       await notesAPI.toggleStar(noteId);
+      
+      setNotes(prev => prev.map(note => 
+        note._id === noteId ? { ...note, starred: !note.starred } : note
+      ));
+      
+      if (selectedNote?._id === noteId) {
+        setSelectedNote(prev => prev ? { ...prev, starred: !prev.starred } : null);
+      }
+      
+      const note = notes.find(n => n._id === noteId);
       toast({
         title: "Success",
-        description: currentStarred ? "Note unstarred" : "Note starred",
+        description: note?.starred ? "Note unstarred" : "Note starred",
       });
-      fetchNotes();
     } catch (error) {
       toast({
         title: "Error",
@@ -271,11 +232,15 @@ const Notes = () => {
 
     try {
       await notesAPI.deleteNote(noteId);
+      setNotes(prev => prev.filter(note => note._id !== noteId));
+      if (selectedNote?._id === noteId) {
+        setSelectedNote(null);
+      }
+      
       toast({
         title: "Success",
         description: "Note deleted successfully",
       });
-      fetchNotes();
     } catch (error) {
       toast({
         title: "Error",
@@ -303,38 +268,48 @@ const Notes = () => {
     }
   };
 
-  const getDifficultyColor = (difficulty: string): string => {
-    switch (difficulty) {
-      case "Beginner": return "bg-green-100 text-green-800 border-green-300";
-      case "Intermediate": return "bg-orange-100 text-orange-800 border-orange-300";
-      case "Advanced": return "bg-red-100 text-red-800 border-red-300";
-      default: return "bg-gray-100 text-gray-800 border-gray-300";
+  const addTag = (tag: string) => {
+    if (tag.trim() && !newNote.tags.includes(tag.trim()) && newNote.tags.length < 10) {
+      setNewNote({
+        ...newNote,
+        tags: [...newNote.tags, tag.trim()]
+      });
     }
+    setTagInput("");
   };
 
-  const getTopicColor = (topic: string): string => {
-    switch (topic) {
-      case "Grammar": return "border-l-blue-500 bg-blue-50";
-      case "Vocabulary": return "border-l-green-500 bg-green-50";
-      case "Culture": return "border-l-purple-500 bg-purple-50";
-      case "Pronunciation": return "border-l-orange-500 bg-orange-50";
-      case "Beginner": return "border-l-emerald-500 bg-emerald-50";
-      case "Intermediate": return "border-l-amber-500 bg-amber-50";
-      case "Advanced": return "border-l-red-500 bg-red-50";
-      default: return "border-l-gray-500 bg-gray-50";
-    }
+  const removeTag = (tagToRemove: string) => {
+    setNewNote({
+      ...newNote,
+      tags: newNote.tags.filter(tag => tag !== tagToRemove)
+    });
   };
 
-  const getTopicBadgeColor = (topic: string): string => {
-    switch (topic) {
-      case "Grammar": return "bg-blue-100 text-blue-800";
-      case "Vocabulary": return "bg-green-100 text-green-800";
-      case "Culture": return "bg-purple-100 text-purple-800";
-      case "Pronunciation": return "bg-orange-100 text-orange-800";
-      case "Beginner": return "bg-emerald-100 text-emerald-800";
-      case "Intermediate": return "bg-amber-100 text-amber-800";
-      case "Advanced": return "bg-red-100 text-red-800";
-      default: return "bg-gray-100 text-gray-800";
+  const resetForm = () => {
+    setNewNote({
+      title: "",
+      content: "",
+      language: currentLanguage,
+      topic: "",
+      tags: []
+    });
+    setTagInput("");
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) {
+      return 'Today';
+    } else if (diffDays === 2) {
+      return 'Yesterday';
+    } else if (diffDays <= 7) {
+      return `${diffDays - 1} days ago`;
+    } else {
+      return date.toLocaleDateString();
     }
   };
 
@@ -345,14 +320,13 @@ const Notes = () => {
       note.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
       note.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
     
-    const matchesTopic = selectedTopic === "All" || note.topic === selectedTopic;
+    const matchesTopic = selectedTopic === "all" || 
+      (selectedTopic === "starred" && note.starred) ||
+      (selectedTopic === "ai-generated" && note.aiGenerated) ||
+      (selectedTopic === "my-notes" && !note.aiGenerated) ||
+      note.topic === selectedTopic;
     
-    const matchesSection = selectedSection === "all" ||
-      (selectedSection === "my-notes" && !note.aiGenerated) ||
-      (selectedSection === "ai-generated" && note.aiGenerated) ||
-      (selectedSection === "starred" && note.starred);
-    
-    return matchesSearch && matchesTopic && matchesSection;
+    return matchesSearch && matchesTopic;
   });
 
   useEffect(() => {
@@ -366,7 +340,7 @@ const Notes = () => {
 
   useEffect(() => {
     fetchNotes();
-  }, [searchTerm, selectedTopic, selectedSection, currentLanguage]);
+  }, [searchTerm, selectedTopic, currentLanguage]);
 
   useEffect(() => {
     if (showLessons) {
@@ -383,124 +357,295 @@ const Notes = () => {
     );
   }
 
-  if (loading && notes.length === 0) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <RefreshCw className="w-8 h-8 animate-spin" />
-        <span className="ml-3 text-muted-foreground">Loading notes...</span>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30">
-      <div className="space-y-6 p-6">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white/60 backdrop-blur-sm rounded-2xl p-6 shadow-sm">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Study Notebook</h1>
-            <p className="text-gray-600">
-              Welcome back, {user.displayName}! Your {currentLanguage === 'japanese' ? 'Japanese 🇯🇵' : 'Spanish 🇪🇸'} learning notes
-            </p>
+    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black text-white">
+      {/* Background Elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-20 left-10 w-72 h-72 bg-purple-500/5 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="relative z-10 min-h-screen flex">
+        {/* Left Sidebar - Notes List */}
+        <div className="w-1/3 bg-gray-900/50 backdrop-blur-sm border-r border-gray-700 flex flex-col">
+          {/* Top Section - Action Buttons */}
+          <div className="p-6 border-b border-gray-700/50">
+            <div className="flex gap-3 mb-4">
+              <Button
+                onClick={() => {
+                  setIsCreatingNote(true);
+                  setSelectedNote(null);
+                }}
+                className="flex-1 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Note
+              </Button>
+              <Button
+                onClick={() => setShowLessons(!showLessons)}
+                className="flex-1 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                AI Notes
+              </Button>
+            </div>
+            
+            {/* Search */}
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search notes..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-800/50 border border-gray-600/50 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+              />
+            </div>
+            
+            {/* Filter Buttons */}
+            <div className="flex flex-wrap gap-2 mb-3">
+              {sections.map((section) => (
+                <button
+                  key={section.value}
+                  onClick={() => setSelectedTopic(section.value)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    selectedTopic === section.value
+                      ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50'
+                      : 'bg-gray-800/50 text-gray-400 border border-gray-600/50 hover:bg-gray-700/50 hover:text-gray-300'
+                  }`}
+                >
+                  {section.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Topic Filters */}
+            <div className="flex flex-wrap gap-2">
+              {topics.map((topic) => (
+                <button
+                  key={topic}
+                  onClick={() => setSelectedTopic(topic)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    selectedTopic === topic
+                      ? 'bg-blue-500/30 text-blue-300 border border-blue-500/50'
+                      : 'bg-gray-800/30 text-gray-400 border border-gray-600/30 hover:bg-gray-700/30 hover:text-gray-300'
+                  }`}
+                >
+                  {topic}
+                </button>
+              ))}
+            </div>
+            
+            {/* Refresh Button */}
+            <Button
+              onClick={() => {
+                console.log('Manual refresh triggered');
+                fetchNotes();
+              }}
+              variant="outline"
+              size="sm"
+              className="w-full mt-3 border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh Notes
+            </Button>
+
+            {/* AI Notes Generation Section */}
+            {showLessons && (
+              <div className="mt-4 p-4 bg-gray-800/30 rounded-lg border border-gray-600/30">
+                <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+                  <Brain className="w-4 h-4" />
+                  Generate AI Notes
+                </h3>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {lessons.map((lesson) => (
+                    <div key={lesson._id} className="flex items-center justify-between p-2 bg-gray-700/50 rounded-lg">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-200 truncate">{lesson.title}</p>
+                        <p className="text-xs text-gray-400">{lesson.difficulty} • {lesson.estimatedMinutes}m</p>
+                      </div>
+                      <Button
+                        onClick={() => generateNotes(lesson._id)}
+                        disabled={generatingId === lesson._id}
+                        size="sm"
+                        className="ml-2 bg-purple-600 hover:bg-purple-700 text-white"
+                      >
+                        {generatingId === lesson._id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Sparkles className="w-3 h-3" />
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+                  {lessons.length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-2">No lessons available</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-          
-          <div className="flex items-center gap-3">
-            <Select value={currentLanguage} onValueChange={handleLanguageChange}>
-              <SelectTrigger className="w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="spanish">🇪🇸 Spanish</SelectItem>
-                <SelectItem value="japanese">🇯🇵 Japanese</SelectItem>
-              </SelectContent>
-            </Select>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setViewMode(viewMode === 'masonry' ? 'list' : 'masonry')}
-            >
-              {viewMode === 'masonry' ? <List className="w-4 h-4" /> : <Grid3X3 className="w-4 h-4" />}
-            </Button>
+          {/* Notes List */}
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              </div>
+            ) : filteredNotes.length === 0 ? (
+              <div className="p-6 text-center">
+                <StickyNote className="w-12 h-12 text-gray-500 mx-auto mb-3" />
+                <p className="text-gray-400 text-sm">No notes found</p>
+                <p className="text-gray-500 text-xs mt-1">
+                  {searchTerm ? "Try adjusting your search" : "Create your first note"}
+                </p>
+              </div>
+            ) : (
+              <div className="p-4">
+                {/* Today Notes */}
+                {filteredNotes.filter(note => formatDate(note.updatedAt) === 'Today').length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Today</h3>
+                    {filteredNotes
+                      .filter(note => formatDate(note.updatedAt) === 'Today')
+                      .map((note) => (
+                        <div
+                          key={note._id}
+                          onClick={() => setSelectedNote(note)}
+                          className={`mb-3 p-4 rounded-lg border border-gray-600/50 bg-gray-800/50 hover:bg-gray-700/50 cursor-pointer transition-all ${
+                            selectedNote?._id === note._id ? 'ring-2 ring-purple-500/50 bg-gray-700/50' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-medium text-gray-200 mb-1 truncate">{note.title}</h4>
+                              <p className="text-sm text-gray-400 mb-2 line-clamp-2">{note.content}</p>
+                              <div className="flex items-center gap-2 text-xs text-gray-500">
+                                <Clock className="w-3 h-3" />
+                                {formatDate(note.updatedAt)}
+                              </div>
+                            </div>
+                            {note.starred && (
+                              <Star className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                            )}
+                          </div>
+                          {note.topic && (
+                            <span className="inline-block mt-2 px-2 py-1 text-xs bg-blue-500/20 text-blue-300 rounded-full">
+                              {note.topic}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowFilters(!showFilters)}
-            >
-              <Filter className="w-4 h-4" />
-            </Button>
+                {/* Other Notes */}
+                {filteredNotes.filter(note => formatDate(note.updatedAt) !== 'Today').length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-400 mb-3">Earlier</h3>
+                    {filteredNotes
+                      .filter(note => formatDate(note.updatedAt) !== 'Today')
+                      .map((note) => (
+                        <div
+                          key={note._id}
+                          onClick={() => setSelectedNote(note)}
+                          className={`mb-3 p-4 rounded-lg border border-gray-600/50 bg-gray-800/50 hover:bg-gray-700/50 cursor-pointer transition-all ${
+                            selectedNote?._id === note._id ? 'ring-2 ring-purple-500/50 bg-gray-700/50' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-medium text-gray-200 mb-1 truncate">{note.title}</h4>
+                              <p className="text-sm text-gray-400 mb-2 line-clamp-2">{note.content}</p>
+                              <div className="flex items-center gap-2 text-xs text-gray-500">
+                                <Clock className="w-3 h-3" />
+                                {formatDate(note.updatedAt)}
+                              </div>
+                            </div>
+                            {note.starred && (
+                              <Star className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                            )}
+                          </div>
+                          {note.topic && (
+                            <span className="inline-block mt-2 px-2 py-1 text-xs bg-blue-500/20 text-blue-300 rounded-full">
+                              {note.topic}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
 
-            {/* ✅ ENHANCED CREATE NOTE DIALOG */}
-            <Dialog open={showAddNote} onOpenChange={setShowAddNote}>
-              <DialogTrigger asChild>
-                <Button className="flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600">
-                  <Plus className="w-4 h-4" />
-                  New Note
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
-                <DialogHeader className="pb-6 border-b">
+        {/* Right Side - Note Detail/Editor */}
+        <div className="flex-1 bg-gray-900/30 backdrop-blur-sm flex flex-col">
+          {isCreatingNote ? (
+            /* Create Note Form */
+            <>
+              <div className="p-6 border-b border-gray-700/50">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
+                    <div className="w-12 h-12 bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center">
                       <FileText className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                      <DialogTitle className="text-2xl">Create New Note</DialogTitle>
-                      <DialogDescription className="text-base">
-                        Capture your learning insights and organize them with tags
-                      </DialogDescription>
+                      <h1 className="text-2xl font-bold text-white">Create New Note</h1>
+                      <p className="text-gray-400">Capture your learning insights and organize them with tags</p>
                     </div>
                   </div>
-                </DialogHeader>
-                
-                <div className="space-y-6 py-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="text-sm font-semibold text-gray-700 mb-2 block">Language</label>
-                      <Select value={newNote.language} onValueChange={(value) => setNewNote({...newNote, language: value})}>
-                        <SelectTrigger className="h-12">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="spanish">🇪🇸 Spanish</SelectItem>
-                          <SelectItem value="japanese">🇯🇵 Japanese</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <label className="text-sm font-semibold text-gray-700 mb-2 block">Topic</label>
-                      <Select value={newNote.topic} onValueChange={(value) => setNewNote({...newNote, topic: value})}>
-                        <SelectTrigger className="h-12">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {topics.map(topic => (
-                            <SelectItem key={topic} value={topic}>{topic}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  <Button
+                    onClick={() => {
+                      setIsCreatingNote(false);
+                      resetForm();
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="border-gray-600 text-gray-300 hover:bg-gray-700"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex-1 p-6 overflow-y-auto">
+                <div className="space-y-6 max-w-4xl">
+                  <div>
+                    <label className="text-sm font-semibold text-gray-300 mb-2 block">Topic (Optional)</label>
+                    <Select value={newNote.topic} onValueChange={(value) => setNewNote({...newNote, topic: value})}>
+                      <SelectTrigger className="h-12 bg-gray-800 border-gray-600 text-white">
+                        <SelectValue placeholder="Select a topic (optional)..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-gray-800 border-gray-600">
+                        {topics.map(topic => (
+                          <SelectItem key={topic} value={topic} className="text-white hover:bg-gray-700 focus:bg-gray-700">
+                            {topic}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   
                   <div>
-                    <label className="text-sm font-semibold text-gray-700 mb-2 block">Title</label>
+                    <label className="text-sm font-semibold text-gray-300 mb-2 block">Title</label>
                     <Input 
                       placeholder="Give your note a meaningful title..."
                       value={newNote.title}
                       onChange={(e) => setNewNote({...newNote, title: e.target.value})}
-                      className="h-12 text-base"
+                      className="h-12 text-base bg-gray-800 border-gray-600 text-white placeholder-gray-400"
                     />
                   </div>
                   
                   <div>
-                    <label className="text-sm font-semibold text-gray-700 mb-2 block">Content</label>
+                    <label className="text-sm font-semibold text-gray-300 mb-2 block">Content</label>
                     <Textarea 
                       placeholder="Write your note content here. Be detailed and include examples, explanations, or anything that will help you remember..."
                       rows={12}
                       value={newNote.content}
                       onChange={(e) => setNewNote({...newNote, content: e.target.value})}
-                      className="resize-none text-base leading-relaxed"
+                      className="resize-none text-base leading-relaxed bg-gray-800 border-gray-600 text-white placeholder-gray-400"
                     />
                     <div className="flex justify-between text-xs text-gray-500 mt-2">
                       <span>Use markdown formatting if needed</span>
@@ -508,16 +653,16 @@ const Notes = () => {
                     </div>
                   </div>
                   
-                  {/* ✅ ENHANCED TAGS SECTION */}
+                  {/* Tags Section */}
                   <div>
-                    <label className="text-sm font-semibold text-gray-700 mb-2 block">
+                    <label className="text-sm font-semibold text-gray-300 mb-2 block">
                       Tags ({newNote.tags.length}/10)
                     </label>
                     
                     {newNote.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-4 p-4 bg-gray-50 rounded-lg border">
+                      <div className="flex flex-wrap gap-2 mb-4 p-4 bg-gray-800/50 rounded-lg border border-gray-600">
                         {newNote.tags.map((tag, index) => (
-                          <Badge key={index} variant="secondary" className="flex items-center gap-2 px-3 py-1 text-sm">
+                          <Badge key={index} variant="secondary" className="flex items-center gap-2 px-3 py-1 text-sm bg-gray-700 text-gray-200">
                             <Hash className="w-3 h-3" />
                             {tag}
                             <Button
@@ -526,7 +671,7 @@ const Notes = () => {
                               className="h-auto p-0 ml-1 hover:bg-red-100"
                               onClick={() => removeTag(tag)}
                             >
-                              <X className="w-3 h-3 text-red-500" />
+                              <X className="w-3 h-3 text-red-400" />
                             </Button>
                           </Badge>
                         ))}
@@ -546,7 +691,7 @@ const Notes = () => {
                               addTag(tagInput);
                             }
                           }}
-                          className="pl-10 h-12"
+                          className="pl-10 h-12 bg-gray-800 border-gray-600 text-white placeholder-gray-400"
                           disabled={newNote.tags.length >= 10}
                         />
                       </div>
@@ -555,7 +700,7 @@ const Notes = () => {
                         variant="outline" 
                         onClick={() => addTag(tagInput)}
                         disabled={!tagInput.trim() || newNote.tags.length >= 10}
-                        className="h-12 px-6"
+                        className="h-12 px-6 border-gray-600 text-gray-300 hover:bg-gray-700"
                       >
                         <Plus className="w-4 h-4 mr-2" />
                         Add
@@ -563,7 +708,7 @@ const Notes = () => {
                     </div>
                     
                     <div>
-                      <p className="text-sm text-gray-600 mb-3">Quick select popular tags:</p>
+                      <p className="text-sm text-gray-400 mb-3">Quick select popular tags:</p>
                       <div className="flex flex-wrap gap-2">
                         {commonTags.map(tag => (
                           <Button
@@ -571,10 +716,10 @@ const Notes = () => {
                             type="button"
                             variant="outline"
                             size="sm"
-                            className={`text-xs transition-all ${
+                            className={`text-xs transition-all border-gray-600 ${
                               newNote.tags.includes(tag) 
-                                ? 'bg-blue-100 text-blue-800 border-blue-300' 
-                                : 'hover:bg-gray-50'
+                                ? 'bg-blue-600/20 text-blue-300 border-blue-500' 
+                                : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
                             }`}
                             onClick={() => addTag(tag)}
                             disabled={newNote.tags.includes(tag) || newNote.tags.length >= 10}
@@ -587,396 +732,135 @@ const Notes = () => {
                     </div>
                   </div>
                   
-                  <div className="flex justify-end gap-3 pt-6 border-t">
-                    <Button variant="outline" onClick={() => setShowAddNote(false)} className="px-6">
+                  <div className="flex justify-end gap-3 pt-6 border-t border-gray-700">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setIsCreatingNote(false);
+                        resetForm();
+                      }}
+                      className="px-6 border-gray-600 text-gray-300 hover:bg-gray-700"
+                    >
                       Cancel
                     </Button>
                     <Button 
                       onClick={createNote} 
                       disabled={!newNote.title.trim() || !newNote.content.trim()}
-                      className="px-6 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600"
+                      className="px-6 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
                     >
                       <Plus className="w-4 h-4 mr-2" />
                       Create Note
                     </Button>
                   </div>
                 </div>
-              </DialogContent>
-            </Dialog>
-            
-            <Button variant="outline" onClick={() => setShowLessons(!showLessons)}>
-              <Brain className="w-4 h-4 mr-2" />
-              AI Generate
-            </Button>
-          </div>
-        </div>
-
-        {/* Search and Filters */}
-        <div className="bg-white/60 backdrop-blur-sm rounded-xl p-4 shadow-sm">
-          <div className="flex flex-col sm:flex-row gap-4 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search notes, tags, or content..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-white/80"
-              />
-            </div>
-            
-            <div className="flex gap-2">
-              <Select value={selectedSection} onValueChange={setSelectedSection}>
-                <SelectTrigger className="w-32 bg-white/80">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {sections.map(section => (
-                    <SelectItem key={section.value} value={section.value}>{section.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {showFilters && (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                key="All"
-                variant={selectedTopic === "All" ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedTopic("All")}
-              >
-                All Topics
-              </Button>
-              {topics.map((topic) => (
-                <Button
-                  key={topic}
-                  variant={selectedTopic === topic ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedTopic(topic)}
-                >
-                  {topic}
-                </Button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* ✅ ENHANCED AI NOTE GENERATION */}
-        {showLessons && (
-          <div className="bg-white/60 backdrop-blur-sm rounded-xl shadow-sm overflow-hidden">
-            <div className="p-6 border-b bg-gradient-to-r from-purple-50 to-blue-50">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
-                  <Brain className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-gray-900">Generate AI Study Notes</h3>
-                  <p className="text-gray-600">Transform your lessons into comprehensive study notes automatically</p>
-                </div>
               </div>
-            </div>
-            
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {lessons.map((lesson) => (
-                  <div 
-                    key={lesson._id} 
-                    className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden group"
-                  >
-                    <div className="p-6">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-lg text-gray-900 mb-2 group-hover:text-blue-600 transition-colors line-clamp-2">
-                            {lesson.title}
-                          </h4>
-                          <div className="flex items-center gap-3 mb-3">
-                            <Badge className={getDifficultyColor(lesson.difficulty)} variant="outline">
-                              {lesson.difficulty}
-                            </Badge>
-                            <div className="flex items-center gap-1 text-sm text-gray-500">
-                              <Clock className="w-4 h-4" />
-                              {lesson.estimatedMinutes}m
-                            </div>
-                          </div>
-                        </div>
-                        <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <BookOpen className="w-6 h-6 text-white" />
-                        </div>
-                      </div>
-                      
-                      {lesson.description && (
-                        <p className="text-sm text-gray-600 mb-4 line-clamp-3 leading-relaxed">
-                          {lesson.description}
-                        </p>
-                      )}
-                      
-                      <div className="flex items-center gap-2 mb-4 text-xs text-gray-500">
-                        <Sparkles className="w-3 h-3" />
-                        <span>AI-powered note generation</span>
-                      </div>
-                      
-                      <Button 
-                        className="w-full h-12 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white"
-                        disabled={generatingId === lesson._id}
-                        onClick={() => generateNotes(lesson._id)}
-                      >
-                        {generatingId === lesson._id ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Generating Notes...
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="w-4 h-4 mr-2" />
-                            Generate Study Notes
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {lessons.length === 0 && (
-                <div className="text-center py-12">
-                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <BookOpen className="w-8 h-8 text-gray-400" />
-                  </div>
-                  <p className="text-gray-500 text-lg">
-                    No lessons available for note generation
-                  </p>
-                  <p className="text-gray-400 text-sm">
-                    Complete some lessons first to generate AI study notes
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Notes Display */}
-        {loading ? (
-          <div className="flex justify-center py-8">
-            <Loader2 className="w-8 h-8 animate-spin" />
-          </div>
-        ) : (
-          /* Masonry Layout */
-          <div className="columns-1 md:columns-2 lg:columns-3 xl:columns-4 gap-4 space-y-4">
-            {filteredNotes.map((note) => (
-              <div
-                key={note._id}
-                className={`break-inside-avoid mb-4 rounded-xl p-4 shadow-sm border-l-4 transition-all hover:shadow-md cursor-pointer ${getTopicColor(note.topic)} bg-white/80 backdrop-blur-sm`}
-                onClick={() => setSelectedNote(note)}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Badge className={getTopicBadgeColor(note.topic)} variant="secondary">
-                      {note.topic}
-                    </Badge>
-                    {note.aiGenerated && (
-                      <Badge variant="outline" className="text-xs">
-                        <Brain className="w-3 h-3 mr-1" />
-                        AI
-                      </Badge>
-                    )}
-                  </div>
-                  
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="p-1 h-auto"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleStar(note._id, note.starred);
-                      }}
-                    >
-                      <Star className={`w-4 h-4 ${note.starred ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400'}`} />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="sm"
-                      className="p-1 h-auto"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteNote(note._id);
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-500" />
-                    </Button>
-                  </div>
-                </div>
-                
-                <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">
-                  {note.title}
-                </h3>
-                
-                <p className="text-sm text-gray-700 mb-3 whitespace-pre-line line-clamp-6">
-                  {note.content}
-                </p>
-                
-                {note.tags && note.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {note.tags.slice(0, 3).map((tag, index) => (
-                      <Badge key={index} variant="outline" className="text-xs">
-                        #{tag}
-                      </Badge>
-                    ))}
-                    {note.tags.length > 3 && (
-                      <Badge variant="outline" className="text-xs">
-                        +{note.tags.length - 3}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-                
-                <div className="flex items-center justify-between text-xs text-gray-500">
-                  <div className="flex items-center gap-1">
-                    <Calendar className="w-3 h-3" />
-                    {new Date(note.createdAt).toLocaleDateString()}
-                  </div>
-                  
-                  {note.aiGenerated && (
-                    <div className="flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" />
-                      AI Generated
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!loading && filteredNotes.length === 0 && (
-          <div className="text-center py-16 bg-white/60 backdrop-blur-sm rounded-xl shadow-sm">
-            <div className="w-24 h-24 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-6">
-              <StickyNote className="w-12 h-12 text-white" />
-            </div>
-            <h3 className="text-2xl font-semibold text-gray-900 mb-3">No notes found</h3>
-            <p className="text-gray-600 mb-6 max-w-md mx-auto">
-              {searchTerm ? "Try adjusting your search terms" : "Start creating notes to organize your learning"}
-            </p>
-            <Button onClick={() => setShowAddNote(true)} size="lg">
-              <Plus className="w-5 h-5 mr-2" />
-              Create Your First Note
-            </Button>
-          </div>
-        )}
-
-        {/* ✅ ENHANCED NOTE VIEW MODAL */}
-        {selectedNote && (
-          <Dialog open={!!selectedNote} onOpenChange={() => setSelectedNote(null)}>
-            <DialogContent className="max-w-5xl max-h-[95vh] overflow-hidden flex flex-col">
-              <DialogHeader className="pb-6 border-b">
-                <div className="flex items-start justify-between">
+            </>
+          ) : selectedNote ? (
+            <>
+              {/* Note Header */}
+              <div className="p-6 border-b border-gray-700/50">
+                <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${getTopicColor(selectedNote.topic)} border-l-0 border-4`}>
-                        <FileText className="w-6 h-6 text-gray-700" />
-                      </div>
-                      <div>
-                        <DialogTitle className="text-2xl text-gray-900 leading-tight">
-                          {selectedNote.title}
-                        </DialogTitle>
-                        <div className="flex items-center gap-3 mt-2">
-                          <Badge className={getTopicBadgeColor(selectedNote.topic)}>
-                            {selectedNote.topic}
-                          </Badge>
-                          {selectedNote.aiGenerated && (
-                            <Badge variant="outline" className="flex items-center gap-1">
-                              <Brain className="w-3 h-3" />
-                              AI Generated
-                            </Badge>
-                          )}
-                          {selectedNote.starred && (
-                            <div className="flex items-center gap-1">
-                              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                              <span className="text-sm text-yellow-600">Starred</span>
-                            </div>
-                          )}
-                        </div>
+                    <h1 className="text-2xl font-bold text-white mb-2">{selectedNote.title}</h1>
+                    <div className="flex items-center gap-3">
+                      {selectedNote.topic && (
+                        <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/50">
+                          {selectedNote.topic}
+                        </Badge>
+                      )}
+                      {selectedNote.aiGenerated && (
+                        <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/50">
+                          <Brain className="w-3 h-3 mr-1" />
+                          AI Generated
+                        </Badge>
+                      )}
+                      <div className="text-sm text-gray-400">
+                        Created {new Date(selectedNote.createdAt).toLocaleDateString()}
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex gap-2">
                     <Button
+                      onClick={() => toggleStar(selectedNote._id)}
                       variant="outline"
                       size="sm"
-                      onClick={() => copyToClipboard(selectedNote.content)}
+                      className={`border-gray-600 hover:bg-gray-700 ${
+                        selectedNote.starred 
+                          ? 'text-yellow-400 hover:text-yellow-300' 
+                          : 'text-gray-300 hover:text-white'
+                      }`}
                     >
-                      {copied ? (
-                        <Check className="w-4 h-4 text-green-500" />
-                      ) : (
-                        <Copy className="w-4 h-4" />
-                      )}
+                      {selectedNote.starred ? <Star className="w-4 h-4" /> : <StarOff className="w-4 h-4" />}
                     </Button>
-                    <div className="text-sm text-gray-500">
-                      {new Date(selectedNote.createdAt).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
-                    </div>
+                    <Button
+                      onClick={() => deleteNote(selectedNote._id)}
+                      variant="outline"
+                      size="sm"
+                      className="border-red-600 text-red-400 hover:bg-red-600 hover:text-white"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      onClick={() => copyToClipboard(selectedNote.content)}
+                      variant="outline"
+                      size="sm"
+                      className="border-gray-600 text-gray-300 hover:bg-gray-700 hover:text-white"
+                    >
+                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    </Button>
                   </div>
                 </div>
-              </DialogHeader>
-              
-              <div className="flex-1 overflow-y-auto py-6">
-                <div className="prose max-w-none">
-                  <div className="text-base leading-relaxed whitespace-pre-wrap text-gray-800 bg-gray-50 rounded-lg p-6 border">
+              </div>
+
+              {/* Note Content */}
+              <div className="flex-1 p-6 overflow-y-auto">
+                <div className="prose prose-invert max-w-none">
+                  <div className="text-gray-200 leading-relaxed whitespace-pre-wrap">
                     {selectedNote.content}
                   </div>
                 </div>
-                
+
+                {/* Tags */}
                 {selectedNote.tags && selectedNote.tags.length > 0 && (
-                  <div className="mt-8 pt-6 border-t">
-                    <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <div className="mt-8 pt-6 border-t border-gray-700/50">
+                    <h3 className="text-sm font-semibold text-gray-400 mb-3 flex items-center gap-2">
                       <Tag className="w-4 h-4" />
-                      Tags ({selectedNote.tags.length})
-                    </h4>
+                      Tags
+                    </h3>
                     <div className="flex flex-wrap gap-2">
                       {selectedNote.tags.map((tag, index) => (
-                        <Badge key={index} variant="outline" className="px-3 py-1">
-                          <Hash className="w-3 h-3 mr-1" />
-                          {tag}
+                        <Badge key={index} variant="outline" className="bg-gray-800/50 text-gray-300 border-gray-600">
+                          #{tag}
                         </Badge>
                       ))}
                     </div>
                   </div>
                 )}
-
-                <div className="mt-8 pt-6 border-t">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div className="flex items-center gap-2 text-gray-600">
-                      <Calendar className="w-4 h-4" />
-                      <span>Created {new Date(selectedNote.createdAt).toLocaleDateString()}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-gray-600">
-                      <FileText className="w-4 h-4" />
-                      <span>{selectedNote.content.length} characters</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-gray-600">
-                      {selectedNote.aiGenerated ? (
-                        <>
-                          <Sparkles className="w-4 h-4" />
-                          <span>AI Generated</span>
-                        </>
-                      ) : (
-                        <>
-                          <Edit className="w-4 h-4" />
-                          <span>Personal Note</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
               </div>
-            </DialogContent>
-          </Dialog>
-        )}
+            </>
+          ) : (
+            // Empty State
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <div className="w-24 h-24 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <FileText className="w-12 h-12 text-white" />
+                </div>
+                <h2 className="text-2xl font-semibold text-white mb-3">Select a note to view</h2>
+                <p className="text-gray-400 mb-6">Choose a note from the sidebar to see its details</p>
+                <Button 
+                  onClick={() => setIsCreatingNote(true)}
+                  className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create New Note
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+
     </div>
   );
 };

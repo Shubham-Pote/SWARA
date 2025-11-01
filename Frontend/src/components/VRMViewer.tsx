@@ -10,32 +10,62 @@ interface VRMViewerProps {
 
 const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerProps) => {
   const mountRef = useRef<HTMLDivElement>(null)
-  const sceneRef = useRef<THREE.Scene>()
-  const rendererRef = useRef<THREE.WebGLRenderer>()
-  const cameraRef = useRef<THREE.PerspectiveCamera>()
-  const vrmRef = useRef<any>()
+  const sceneRef = useRef<THREE.Scene | null>(null)
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null)
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const vrmRef = useRef<any>(null)
   const clockRef = useRef<THREE.Clock>(new THREE.Clock())
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
-  const animationIdRef = useRef<number>()
+  const animationIdRef = useRef<number | null>(null)
   const [isGreeting, setIsGreeting] = useState(false)
   const greetingStartTimeRef = useRef<number | null>(null)
 
-  // Character configurations with better positioning
+  // Character configurations with better positioning  
   const characterConfig = {
     maria: {
       modelPath: '/models/maria/maria.vrm',
-      position: [0, 0, 0],  // Higher position to show more of upper body
-      scale: 1.2,  // Adjusted scale
+      position: [0, -1.0, -2.0],  // Move back (negative Z) and lower
+      scale: 2.0,  // Reduce scale slightly for better framing
       flag: '🇪🇸'
     },
     akira: {
       modelPath: '/models/akira/akira.vrm', 
-      position: [0, 0, 0],  // Higher position to show more of upper body
-      scale: 1.2,  // Adjusted scale
+      position: [0, -1.0, -2.0],  // Move back (negative Z) and lower
+      scale: 2.0,  // Reduce scale slightly for better framing
       flag: '🇯🇵'
     }
   }
+
+  // Handle character switching - reload model when character changes
+  useEffect(() => {
+    if (sceneRef.current && vrmRef.current) {
+      // Remove old character
+      sceneRef.current.remove(vrmRef.current.scene);
+      vrmRef.current = null;
+      
+      // Load new character
+      loadVRMModel();
+    }
+  }, [characterId]);
+
+  // Handle emotion changes
+  useEffect(() => {
+    if (vrmRef.current && vrmRef.current.expressionManager) {
+      // updateVRMEmotion(emotion);
+      console.log('Emotion changed to:', emotion);
+    }
+  }, [emotion]);
+
+  // Handle thinking state animation
+  useEffect(() => {
+    if (vrmRef.current) {
+      if (isThinking) {
+        // Add subtle animation when thinking
+        setIsGreeting(false);
+      }
+    }
+  }, [isThinking]);
 
   useEffect(() => {
     if (!mountRef.current) return
@@ -45,10 +75,10 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
     scene.background = null  // Transparent background
     
     const camera = new THREE.PerspectiveCamera(
-      35,  // Wider FOV for better view
+      45,  // Wider FOV to see more of the character
       mountRef.current.clientWidth / mountRef.current.clientHeight,
-      0.1,
-      20
+      0.01,  // Much closer near plane
+      50     // Increased far plane
     )
     
     const renderer = new THREE.WebGLRenderer({ 
@@ -57,7 +87,11 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
       powerPreference: "high-performance" 
     })
 
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight)
+    // Ensure minimum size to prevent WebGL errors
+    const width = Math.max(mountRef.current.clientWidth, 300)
+    const height = Math.max(mountRef.current.clientHeight, 300)
+    
+    renderer.setSize(width, height)
     renderer.setPixelRatio(window.devicePixelRatio)
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -74,9 +108,11 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
     // Set up lighting
     setupLighting(scene)
 
-    // Position camera for better framing
-    camera.position.set(0, 0.2, 2.5)  // Closer and centered for better view
-    camera.lookAt(0, 0.1, 0)  // Look at character's chest/face area
+    // Position camera for better framing - moved higher to show character better
+    camera.position.set(0, 1.5, 2.0)  // Position in front of character
+    camera.lookAt(0, 0.5, -2.0)  // Look at character's position
+    console.log(`📷 Camera positioned at:`, camera.position)
+    console.log(`👀 Camera looking at: (0, 0.5, -2.0)`)
 
     // Load VRM model
     loadVRMModel()
@@ -100,8 +136,8 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
     const handleResize = () => {
       if (!mountRef.current || !camera || !renderer) return
       
-      const width = mountRef.current.clientWidth
-      const height = mountRef.current.clientHeight
+      const width = Math.max(mountRef.current.clientWidth, 300)
+      const height = Math.max(mountRef.current.clientHeight, 300)
       
       camera.aspect = width / height
       camera.updateProjectionMatrix()
@@ -121,6 +157,11 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
       renderer.dispose()
     }
   }, [characterId])
+
+  // Debug emotion changes
+  useEffect(() => {
+    console.log(`🎭 Emotion changed to: ${emotion}, isThinking: ${isThinking}`)
+  }, [emotion, isThinking])
 
   const setupLighting = (scene: THREE.Scene) => {
     // Brighter ambient light
@@ -152,12 +193,16 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
       setHasError(false)
 
       const config = characterConfig[characterId]
+      console.log(`🎭 Loading VRM model for ${characterId}:`, config.modelPath)
       
       // Check if VRM file exists
       const response = await fetch(config.modelPath, { method: 'HEAD' })
       if (!response.ok) {
+        console.warn(`❌ VRM file not found: ${config.modelPath}`)
         throw new Error('VRM file not found')
       }
+
+      console.log(`✅ VRM file exists, loading model...`)
 
       // Import VRM loader
       const { VRMLoaderPlugin, VRMHumanBoneName } = await import('@pixiv/three-vrm')
@@ -170,24 +215,47 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
       const vrm = gltf.userData.vrm
 
       if (!vrm) {
+        console.error(`❌ Invalid VRM file - no VRM data found`)
         throw new Error('Invalid VRM file')
       }
 
+      console.log(`✅ VRM model loaded successfully:`, {
+        hasHumanoid: !!vrm.humanoid,
+        hasExpressionManager: !!vrm.expressionManager,
+        bones: vrm.humanoid ? Object.keys(vrm.humanoid.normalizedHumanBones || {}).length : 0
+      })
+
       // Position and scale the model
+      console.log(`🎯 Setting VRM position to:`, config.position)
       vrm.scene.position.set(...config.position)
+      console.log(`📍 VRM actual position after setting:`, vrm.scene.position)
       vrm.scene.scale.setScalar(config.scale)
+      console.log(`📏 VRM scale set to:`, config.scale)
+      
+      // Add a visible test cube to verify scene is working
+      const testGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5)
+      const testMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: true })
+      const testCube = new THREE.Mesh(testGeometry, testMaterial)
+      testCube.position.set(1, 1, 0) // Position next to character
+      if (sceneRef.current) {
+        sceneRef.current.add(testCube)
+        console.log(`🔴 Added red test cube at position (1, 1, 0)`)
+      }
       
       // Check if model needs rotation (some VRMs face backwards by default)
-      // For now, no rotation - adjust based on specific model
-      vrm.scene.rotation.y = Math.PI  // Uncomment if model faces backwards
+      vrm.scene.rotation.y = 0  // Try no rotation first
       
       // Set up natural idle pose
       if (vrm.humanoid) {
+        console.log(`🎭 Setting up natural pose for ${characterId}`)
         setupNaturalPose(vrm, VRMHumanBoneName)
+      } else {
+        console.warn(`⚠️ No humanoid system found in VRM model`)
       }
 
       // Initialize expressions
       if (vrm.expressionManager) {
+        console.log(`😊 Expression manager found, initializing expressions`)
         // Reset all expressions
         const expressions = ['neutral', 'happy', 'sad', 'angry', 'surprised', 'relaxed', 'blink']
         expressions.forEach(expr => {
@@ -195,6 +263,8 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
             vrm.expressionManager.setValue(expr, 0)
           } catch {}
         })
+      } else {
+        console.warn(`⚠️ No expression manager found in VRM model`)
       }
 
       // Add to scene
@@ -212,8 +282,9 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
       }
 
       setIsLoading(false)
+      console.log(`🎉 VRM model ${characterId} loaded and ready for animations!`)
     } catch (error) {
-      console.warn('VRM loading failed:', error)
+      console.error('❌ VRM loading failed:', error)
       setHasError(true)
       setIsLoading(false)
     }
@@ -290,7 +361,7 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
         head.rotation.y = 0  // Look straight ahead
       }
       if (hips) {
-        hips.position.y = 0  // Normal hip height
+        hips.position.y = 0.5  // Moderate hip height for better proportion
       }
       
       // Update the humanoid system
@@ -369,7 +440,7 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
       // Very subtle body sway
       if (hips) {
         hips.position.x = Math.sin(time * 0.4) * swayAmount
-        hips.position.y = Math.sin(time * 0.8) * 0.003
+        hips.position.y = 0.5 + Math.sin(time * 0.8) * 0.003  // Base height + subtle movement
         hips.rotation.y = Math.sin(time * 0.3) * 0.01
       }
       
@@ -385,6 +456,8 @@ const VRMViewer = ({ characterId, emotion, isThinking, className }: VRMViewerPro
         // Greeting animation - right hand waving HIGH AND VISIBLE
         const greetingTime = time - greetingStartTimeRef.current
         const waveProgress = Math.min(greetingTime / 3, 1) // 3 second greeting
+        // Use waveProgress for future wave animation implementation
+        console.log('Wave animation progress:', waveProgress);
         
         // Right arm waving motion - PROPER UPWARD LIFTING AND OUTWARD WAVING
         if (rightUpperArm) {

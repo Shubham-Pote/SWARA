@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { authAPI } from '@/lib/api';
 
 interface User {
@@ -40,7 +40,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     const validateToken = async () => {
@@ -52,9 +51,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       if (storedToken && savedUser) {
         try {
-          const userData = JSON.parse(savedUser);
-          setToken(storedToken);
-          
           // Validate token with backend
           console.log('🔐 Validating token with backend...');
           const profileData = await authAPI.getProfile();
@@ -69,7 +65,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         } catch (error) {
           console.error('❌ Token validation failed:', error);
-          setToken(null);
           setUser(null);
           localStorage.removeItem('token');
           localStorage.removeItem('user');
@@ -95,7 +90,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const data = await authAPI.register(userData);
 
       if (data.success && data.token) {
-        setToken(data.token);
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         setUser(data.user);
@@ -116,7 +110,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const data = await authAPI.login({ email, password });
       
       if (data.success && data.token) {
-        setToken(data.token);
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
         setUser(data.user);
@@ -134,7 +127,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     console.log('🔓 Logging out');
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    setToken(null);
     setUser(null);
   };
 

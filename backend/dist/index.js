@@ -19,7 +19,6 @@ const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
 const lesson_routes_1 = __importDefault(require("./routes/lesson.routes"));
 const notes_routes_1 = __importDefault(require("./routes/notes.routes"));
 const readingArticle_routes_1 = __importDefault(require("./routes/readingArticle.routes"));
-const character_routes_1 = __importDefault(require("./routes/character.routes"));
 const settings_routes_1 = __importDefault(require("./routes/settings.routes"));
 const vrm_routes_1 = __importDefault(require("./routes/vrm.routes"));
 // ────────────────────────────────────────────────────────────
@@ -37,11 +36,26 @@ app.set("io", io); // expose to controllers
 // ────────────────────────────────────────────────────────────
 // Global middleware
 // ────────────────────────────────────────────────────────────
-app.use((0, cors_1.default)());
-app.use((0, helmet_1.default)());
+app.use((0, cors_1.default)({
+    origin: ["http://localhost:8080", "http://localhost:3000", "http://127.0.0.1:8080"],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"]
+}));
+app.use((0, helmet_1.default)({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginEmbedderPolicy: false
+}));
 app.use(express_1.default.json());
-// Static audio (lesson mp3/ogg)
-app.use("/audio", express_1.default.static(path_1.default.join(__dirname, "../public/audio")));
+// Static audio (lesson mp3/ogg + generated TTS)
+app.use("/audio", express_1.default.static(path_1.default.join(__dirname, "../public/audio"), {
+    setHeaders: (res, path) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Content-Type', 'audio/wav');
+    }
+}));
 // ────────────────────────────────────────────────────────────
 // Welcome
 // ────────────────────────────────────────────────────────────
@@ -60,10 +74,9 @@ app.use("/api/auth", auth_routes_1.default);
 app.use("/api/lessons", lesson_routes_1.default);
 app.use("/api/notes", notes_routes_1.default);
 app.use("/api/reading", readingArticle_routes_1.default);
-// Character routes enabled for authentication endpoints
-app.use("/api/character", character_routes_1.default);
+// Character routes disabled - using WebSocket only
+// app.use("/api/character", characterRoutes);
 app.use("/api/settings", settings_routes_1.default);
-app.use("/api/vrm", vrm_routes_1.default);
 app.use("/api/vrm", vrm_routes_1.default);
 // ────────────────────────────────────────────────────────────
 // Error handler

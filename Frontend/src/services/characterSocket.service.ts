@@ -29,6 +29,14 @@ class CharacterSocketService {
 
   constructor() {
     this.connect()
+    
+    // Enable mock mode after a short timeout if no connection is established
+    setTimeout(() => {
+      if (!this.isConnected) {
+        console.warn('⏰ Connection timeout - enabling mock mode for development')
+        this.enableMockMode()
+      }
+    }, 3000)
   }
 
   private connect() {
@@ -91,13 +99,11 @@ class CharacterSocketService {
       console.log('Error details:', error.message)
       this.emit('connection_error', error)
       
-      // Try fallback to mock mode after 3 failed attempts
-      setTimeout(() => {
-        if (!this.isConnected) {
-          console.warn('🔄 Switching to mock mode for development')
-          this.enableMockMode()
-        }
-      }, 5000)
+      // Immediately switch to mock mode on connection error
+      if (!this.isConnected) {
+        console.warn('🔄 Connection failed, switching to mock mode immediately')
+        this.enableMockMode()
+      }
     })
 
     // Character response events
@@ -291,7 +297,6 @@ class CharacterSocketService {
     this.emit('connection_status', { connected: true })
     
     // Override sendMessage for mock responses
-    const originalSendMessage = this.sendMessage
     this.sendMessage = (text: string) => {
       console.log('📤 Mock sending:', text)
       
@@ -301,23 +306,27 @@ class CharacterSocketService {
       // Simulate response after delay
       setTimeout(() => {
         const mockResponses = [
-          "This is a mock response since the backend is not available.",
-          "I'm running in demo mode. Please start the backend server for full functionality.",
-          "Mock mode is active. Your message was: " + text
+          "¡Hola! I'm María, your Spanish teacher. This is a demo response since the backend is not connected.",
+          "こんにちは！I'm Akira, your Japanese tutor. The system is running in mock mode right now.",
+          "I understand you said: '" + text + "'. I'm currently running in demo mode - please start the backend for full AI responses!",
+          "Great question! In mock mode, I can only give you these preset responses, but I'm ready to help with language learning once the backend is connected.",
+          "¡Perfecto! Your message was received. This is a demonstration response while running without the backend server."
         ]
         
         const response = mockResponses[Math.floor(Math.random() * mockResponses.length)]
         
         this.emit('character_response', {
           text: response,
-          emotion: 'neutral',
+          emotion: 'happy',
           isError: false,
           fallback: true
         })
         
         this.emit('character_thinking', false)
-      }, 1000 + Math.random() * 2000)
+      }, 1500 + Math.random() * 2000) // 1.5-3.5 second delay
     }
+    
+    console.log('✅ Mock mode enabled - character will now respond to messages')
   }
 
   // Disconnect
