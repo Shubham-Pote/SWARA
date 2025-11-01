@@ -1,5 +1,8 @@
-const API_BASE_URL = '/api';  // Use Vite proxy
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL 
+  ? `${import.meta.env.VITE_API_BASE_URL}/api` 
+  : '/api';  // Use Vite proxy in development
 console.log('API_BASE_URL:', API_BASE_URL);
+console.log('Environment:', import.meta.env.MODE);
 
 // Token management functions
 export const setToken = (token: string) => {

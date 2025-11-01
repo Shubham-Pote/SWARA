@@ -225,7 +225,8 @@ export default function CharacterChat() {
 
     const handleVoiceAudio = (data: { audioUrl: string; text: string; emotion: string }) => {
       if (audioRef.current && data.audioUrl) {
-        const fullUrl = data.audioUrl.startsWith('http') ? data.audioUrl : `http://localhost:5000${data.audioUrl}`;
+        const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+        const fullUrl = data.audioUrl.startsWith('http') ? data.audioUrl : `${backendUrl}${data.audioUrl}`;
         audioRef.current.src = fullUrl;
         audioRef.current.volume = 0.8;
         audioRef.current.play().catch(error => console.error('Audio playback error:', error));

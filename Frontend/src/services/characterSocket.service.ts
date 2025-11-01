@@ -46,14 +46,12 @@ class CharacterSocketService {
       return;
     }
 
-    // Use the current URL's protocol and hostname for WebSocket connection
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const hostname = window.location.hostname
-    const port = '5000' // Backend port - always 5000 regardless of frontend port
-    const BACKEND_URL = `http://${hostname}:${port}`
+    // Use environment variable or fallback to localhost
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'
     
     console.log('🔌 Connecting to WebSocket:', `${BACKEND_URL}/character`)
     console.log('🌐 Frontend URL:', window.location.href)
+    console.log('🔧 Backend URL:', BACKEND_URL)
     
     // Get authentication token
     const token = localStorage.getItem('token')
