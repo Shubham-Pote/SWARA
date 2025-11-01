@@ -18,7 +18,7 @@ const characters: Character[] = [
     language: 'Japanese',
     description: 'Konnichiwa! I\'m Akira Tanaka, your Japanese tutor from Tokyo. I specialize in teaching formal Japanese, business language, and cultural etiquette. Whether you\'re a beginner or intermediate learner, I\'ll guide you through the beautiful complexity of Japanese language and culture.',
     flag: '🇯🇵',
-    image: '/src/assets/images/Akira.png' // Updated path
+    image: '/images/Akira.png'
   },
   {
     id: 'maria',
@@ -26,7 +26,7 @@ const characters: Character[] = [
     language: 'Spanish',
     description: '¡Hola! I\'m María González, your Spanish teacher from Mexico City! I\'m here to help you learn Spanish through fun conversations about Mexican culture, food, and daily life. Feel free to ask me anything in English or Spanish - let\'s make learning enjoyable!',
     flag: '🇲🇽',
-    image: '/src/assets/images/Maria.png' // Updated path
+    image: '/images/Maria.png'
   }
 ]
 
