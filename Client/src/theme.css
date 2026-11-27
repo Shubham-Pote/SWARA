@@ -1,0 +1,191 @@
+@property --swara-accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #f2cb94;
+}
+@property --swara-paper {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #f8efdf;
+}
+@property --swara-paper-accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #813f31;
+}
+@property --swara-chrome {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #211e25;
+}
+
+:root {
+  --swara-spanish: #f2cb94;
+  --swara-japanese: #aad7e5;
+  --swara-ground: #181b24;
+  --swara-text: #fff5e8;
+  --swara-muted: #cdc7c8;
+  --swara-error: #ffbfb4;
+  --swara-danger: #8b302b;
+  --swara-scrim: rgb(7 11 20 / 62%);
+  --swara-shadow: 0 10px 36px rgb(7 10 20 / 25%);
+  --swara-dialog-shadow: 0 20px 64px rgb(7 10 20 / 48%);
+  --swara-font-ui: Manrope, system-ui, sans-serif;
+  --swara-font-display: Newsreader, Georgia, serif;
+  --swara-size-body: 15px;
+  --swara-size-control: 14px;
+  --swara-size-small: 12px;
+  --swara-size-label: 11px;
+  --swara-control: 44px;
+  --swara-icon: 18px;
+  --swara-gap: 8px;
+  --swara-radius-control: 8px;
+  --swara-radius-surface: 14px;
+  --swara-radius-dialog: 20px;
+  --swara-motion: 180ms cubic-bezier(.2, .7, .2, 1);
+  --swara-palette-motion: 240ms ease-out;
+}
+
+:root, [data-guide="spanish"] {
+  --swara-accent: var(--swara-spanish);
+  --swara-accent-ink: #2e211c;
+  --swara-paper: #f8efdf;
+  --swara-paper-ink: #322822;
+  --swara-paper-muted: #625146;
+  --swara-paper-accent: #813f31;
+  --swara-chrome: #211e25;
+  --swara-raised: #34303a;
+  --swara-portrait: #bc654b;
+}
+
+.app-shell[data-language="japanese"], [data-guide="japanese"] {
+  --swara-accent: var(--swara-japanese);
+  --swara-accent-ink: #132d39;
+  --swara-paper: #edf2f2;
+  --swara-paper-ink: #20343e;
+  --swara-paper-muted: #465c66;
+  --swara-paper-accent: #22566b;
+  --swara-chrome: #19242e;
+  --swara-raised: #2b3946;
+  --swara-portrait: #6b9eaf;
+}
+
+.app-shell, [data-guide] {
+  --swara-glass: rgb(from var(--swara-chrome) r g b / .91);
+  --swara-scene: rgb(from var(--swara-chrome) r g b / .68);
+  --swara-ui-accent: var(--swara-accent);
+  --swara-ui-ink: var(--swara-accent-ink);
+  --swara-ui-text: var(--swara-text);
+  --swara-ui-muted: var(--swara-muted);
+  --swara-ui-error: var(--swara-error);
+  --swara-ui-line: rgb(from var(--swara-accent) r g b / .29);
+  --swara-ui-wash: rgb(from var(--swara-accent) r g b / .08);
+  --swara-ui-hover: rgb(from var(--swara-accent) r g b / .16);
+  --swara-ui-active: rgb(from var(--swara-accent) r g b / .22);
+  --background: var(--swara-chrome);
+  --foreground: var(--swara-ui-text);
+  --primary: var(--swara-ui-accent);
+  --primary-foreground: var(--swara-ui-ink);
+  --accent: var(--swara-ui-wash);
+  --accent-foreground: var(--swara-ui-text);
+  --border: var(--swara-ui-line);
+  --ring: var(--swara-ui-accent);
+  accent-color: var(--swara-ui-accent);
+}
+
+.swara-paper {
+  color-scheme: light;
+  --swara-ui-accent: var(--swara-paper-accent);
+  --swara-ui-ink: var(--swara-text);
+  --swara-ui-text: var(--swara-paper-ink);
+  --swara-ui-muted: var(--swara-paper-muted);
+  --swara-ui-error: var(--swara-danger);
+  --swara-ui-line: rgb(from var(--swara-paper-accent) r g b / .28);
+  --swara-ui-wash: rgb(from var(--swara-paper-accent) r g b / .07);
+  --swara-ui-hover: rgb(from var(--swara-paper-accent) r g b / .14);
+  --swara-ui-active: rgb(from var(--swara-paper-accent) r g b / .22);
+  --swara-dialog-surface: var(--swara-paper);
+  --background: var(--swara-paper);
+  --foreground: var(--swara-ui-text);
+  --primary: var(--swara-ui-accent);
+  --primary-foreground: var(--swara-ui-ink);
+  --accent: var(--swara-ui-wash);
+  --accent-foreground: var(--swara-ui-text);
+  --border: var(--swara-ui-line);
+  --ring: var(--swara-ui-accent);
+  accent-color: var(--swara-ui-accent);
+}
+
+.app-shell ::selection {
+  color: var(--swara-ui-ink);
+  background: var(--swara-ui-accent);
+}
+.app-shell [role="alert"] { color: var(--swara-ui-error); }
+.app-shell :is(h1, h2)[tabindex="-1"]:focus-visible {
+  outline: none;
+  box-shadow: -3px 0 var(--swara-ui-accent);
+}
+@media (forced-colors: active) {
+  .app-shell :is(h1, h2)[tabindex="-1"]:focus-visible { outline: 2px solid Highlight; }
+}
+
+.swara-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--swara-gap);
+  height: auto;
+  min-height: var(--swara-control);
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--swara-radius-control);
+  background: var(--swara-ui-accent);
+  color: var(--swara-ui-ink);
+  font: 720 var(--swara-size-control)/1.25 var(--swara-font-ui);
+  text-align: center;
+  text-decoration: none;
+  white-space: normal;
+  box-shadow: none;
+  transition: filter var(--swara-motion), border-color var(--swara-motion);
+}
+.swara-action svg {
+  width: var(--swara-icon);
+  height: var(--swara-icon);
+  flex: none;
+}
+.swara-action:not(:disabled, [aria-disabled="true"]):hover { filter: brightness(1.08); }
+.swara-action:not(:disabled, [aria-disabled="true"]):active { filter: brightness(.96); }
+.swara-action--quiet {
+  border-color: var(--swara-ui-line);
+  background: var(--swara-ui-wash);
+  color: var(--swara-ui-text);
+}
+.swara-action--quiet:not(:disabled, [aria-disabled="true"]):hover { background: var(--swara-ui-hover); filter: none; }
+.swara-action--quiet:not(:disabled, [aria-disabled="true"]):active,
+.swara-action--quiet[aria-pressed="true"] { background: var(--swara-ui-active); filter: none; }
+.swara-action--quiet[aria-pressed="true"] { color: var(--swara-ui-accent); border-color: currentColor; }
+.swara-action--danger { background: var(--swara-danger); color: var(--swara-text); }
+.swara-action[aria-disabled="true"] { cursor: default; }
+.swara-action[aria-busy="true"] { cursor: progress; }
+.swara-action:focus-visible { box-shadow: none; }
+
+.access, .folio-confirm {
+  border: 1px solid var(--swara-ui-line);
+  border-radius: var(--swara-radius-dialog);
+  background: var(--swara-dialog-surface, var(--swara-raised));
+  color: var(--swara-ui-text);
+  box-shadow: var(--swara-dialog-shadow);
+}
+.access::backdrop, .folio-confirm::backdrop, .rail-drawer::backdrop {
+  background: var(--swara-scrim);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .app-shell {
+    transition: --swara-accent var(--swara-palette-motion), --swara-paper var(--swara-palette-motion),
+      --swara-paper-accent var(--swara-palette-motion), --swara-chrome var(--swara-palette-motion);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .swara-action { transition: none; }
+}

@@ -16,6 +16,7 @@ export interface IUser extends mongoose.Document {
     updatedAt?: Date;
     languages: string[];
     currentLanguage: string;
+    companionConversation?: Partial<Record<'spanish' | 'japanese', mongoose.Types.ObjectId>>;
     comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
@@ -30,7 +31,8 @@ const userSchema = new mongoose.Schema({
     password: {
         type: String,
         required: true,
-        minlength: 6
+        minlength: 6,
+        select: false
     },
     displayName: {
         type: String,
@@ -71,6 +73,10 @@ const userSchema = new mongoose.Schema({
     languages: {
         type: [String],
         default: []
+    },
+    companionConversation: {
+        spanish: mongoose.Schema.Types.ObjectId,
+        japanese: mongoose.Schema.Types.ObjectId
     },
     currentLanguage: {
         type: String,

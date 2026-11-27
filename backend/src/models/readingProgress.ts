@@ -1,14 +1,16 @@
 import mongoose from 'mongoose';
+import { READING_LANGUAGES, type IReadingArticle } from './readingArticle';
 
 export interface IReadingProgress extends mongoose.Document {
   userId: mongoose.Types.ObjectId;
   articleId: mongoose.Types.ObjectId;
-  language: string;
+  language: IReadingArticle['language'];
   status: 'not_started' | 'reading' | 'completed';
   startedAt: Date;
   completedAt?: Date;
   timeSpent: number; // in seconds
   quizScore: number; // percentage 0-100
+  quizCorrectAnswers?: number;
   quizAttempts: number;
   createdAt?: Date;
   updatedAt?: Date;
@@ -27,7 +29,7 @@ const readingProgressSchema = new mongoose.Schema({
   },
   language: {
     type: String,
-    enum: ['spanish', 'japanese'],
+    enum: READING_LANGUAGES,
     required: true
   },
   status: {
@@ -53,6 +55,7 @@ const readingProgressSchema = new mongoose.Schema({
     min: 0,
     max: 100
   },
+  quizCorrectAnswers: { type: Number, min: 0 },
   quizAttempts: {
     type: Number,
     default: 0,

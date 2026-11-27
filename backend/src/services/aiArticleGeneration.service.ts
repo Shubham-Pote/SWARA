@@ -1,291 +1,131 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import dotenv from 'dotenv';
+import { GoogleGenerativeAIAbortError, GoogleGenerativeAIError, GoogleGenerativeAIFetchError } from '@google/generative-ai';
+import { z } from 'zod';
+import { IReadingArticle, READING_CONTENT_TYPES } from '../models/readingArticle';
+import { generateGeminiJson } from './geminiJson.service';
+import { readingStarters } from './readingStarters';
 
-dotenv.config();
+const text = z.string().trim().min(1);
+const articleContent = z.object({
+  title: text.max(200),
+  content: text.max(3000),
+  preview: text.max(200),
+  estimatedReadTime: z.number().int().min(1).max(15),
+  contentWithTranslations: z.array(z.object({
+    originalText: text,
+    translation: text,
+    type: z.enum(['sentence', 'paragraph'])
+  })).min(1),
+  culturalContext: z.object({
+    country: text,
+    backgroundInfo: text,
+    culturalTips: z.array(text),
+    learningPoints: z.array(text)
+  }),
+  vocabulary: z.array(z.object({
+    word: text,
+    definition: text,
+    pronunciation: text,
+    difficulty: z.number(),
+    contextSentence: text
+  })),
+  grammarPoints: z.array(z.object({ concept: text, explanation: text, examples: z.array(text) })),
+  comprehensionQuestions: z.array(z.object({
+    question: text,
+    options: z.array(text).min(2),
+    correctAnswer: z.number().int().nonnegative(),
+    explanation: text
+  }).refine(question => question.correctAnswer < question.options.length, 'Invalid answer index')).min(1),
+  interactiveElements: z.object({
+    storyChoices: z.array(z.object({ choiceText: text, outcome: text, vocabularyIntroduced: z.array(text) }))
+  })
+});
 
-if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY is not set in environment variables');
-}
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-// Extract clean JSON from AI response
-function extractJSON(text: string): any {
-    try {
-        // Remove markdown code blocks
-        const cleanText = text.replace(/``````\n?/g, '').trim();
-        
-        // Find JSON object
-        const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            return JSON.parse(jsonMatch[0]);
-        }
-        
-        return JSON.parse(cleanText);
-    } catch (error) {
-        console.error('Failed to extract JSON:', error);
-        throw new Error('Invalid JSON response from AI');
-    }
-}
-
-export class AIArticleService {
-    // Generate personalized article based on user progress
-    static async generatePersonalizedArticle(params: {
-        language: 'spanish' | 'japanese';
-        userLevel: number;
-        completedArticles: number;
-        lastTopic?: string;
-        preferredContentType?: string;
-    }) {
-        const { language, userLevel, completedArticles, lastTopic, preferredContentType } = params;
-
-        // Determine difficulty based on user level and progress
-        let difficulty: 'Beginner' | 'Intermediate' | 'Advanced' = 'Beginner';
-        if (userLevel >= 3 || completedArticles >= 5) difficulty = 'Intermediate';
-        if (userLevel >= 6 || completedArticles >= 15) difficulty = 'Advanced';
-
-        // Determine content type based on progress
-        const contentTypes = ['mini-stories', 'local-news', 'dialogue-reads', 'idioms-action', 'global-comparison'];
-        const contentType = preferredContentType || contentTypes[completedArticles % contentTypes.length];
-
-        // Generate topic progression
-        const topicProgression = this.getTopicProgression(language, completedArticles, lastTopic);
-
-        const culturalRegion = language === 'spanish' ? 'Spain' : 'Japan';
-
-        const prompt = `Create a ${difficulty}-level ${language} reading article for a language learner.
-
-User Context:
-- Level: ${userLevel}
-- Articles completed: ${completedArticles}  
-- Content type: ${contentType}
-- Topic focus: ${topicProgression.topic}
-- Cultural region: ${culturalRegion}
-
-Requirements:
-- Make it engaging and culturally authentic
-- Include ${difficulty}-appropriate vocabulary
-- Add interactive elements for language learning
-- Ensure content builds on previous learning
-- Include cultural insights and context
-- MUST include English translations for each sentence/paragraph
-
-Return ONLY this JSON structure:
-{
-  "title": "Engaging article title in English",
-  "language": "${language}",
-  "difficulty": "${difficulty}",
-  "contentType": "${contentType}",
-  "topic": "${topicProgression.topic}",
-  "estimatedReadTime": 4,
-  "content": "Full article content in ${language} (400-600 words)",
-  "contentWithTranslations": [
-    {
-      "originalText": "First sentence in ${language}",
-      "translation": "English translation of first sentence",
-      "type": "sentence"
-    },
-    {
-      "originalText": "Second sentence in ${language}",
-      "translation": "English translation of second sentence", 
-      "type": "sentence"
-    }
+const readingTopics = {
+  spanish: [
+    'Daily Greetings and Introductions', 'Family and Home', 'Food and Restaurants', 'Shopping and Markets',
+    'Travel and Transportation', 'Work and Career', 'Spanish Festivals and Traditions',
+    'History and Culture', 'Current Events in Spain'
   ],
-  "preview": "Brief preview of the first 150 characters",
-  "culturalContext": {
-    "country": "${culturalRegion}",
-    "backgroundInfo": "Cultural background explanation",
-    "culturalTips": ["Cultural insight 1", "Cultural insight 2", "Cultural insight 3"],
-    "learningPoints": ["What students will learn culturally"]
-  },
-  "vocabulary": [
-    {
-      "word": "${language === 'japanese' ? 'example_word' : 'ejemplo'}",
-      "definition": "English definition",
-      "pronunciation": "${language === 'japanese' ? 'romaji' : 'phonetic'}",
-      "difficulty": ${difficulty === 'Beginner' ? 1 : difficulty === 'Intermediate' ? 2 : 3},
-      "contextSentence": "Example sentence using the word"
-    }
-  ],
-  "grammarPoints": [
-    {
-      "concept": "Grammar concept being taught",
-      "explanation": "How this grammar works",
-      "examples": ["Example 1", "Example 2"]
-    }
-  ],
-  "comprehensionQuestions": [
-    {
-      "question": "Question in ${language}",
-      "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
-      "correctAnswer": 1,
-      "explanation": "Why this answer is correct"
-    }
-  ],
-  "interactiveElements": {
-    "storyChoices": [
-      {
-        "choiceText": "Choice description",
-        "outcome": "What happens with this choice",
-        "vocabularyIntroduced": ["new word 1", "new word 2"]
-      }
-    ]
+  japanese: [
+    'Japanese Greetings and Politeness', 'Japanese Family Structure', 'Japanese Food Culture',
+    'Tokyo Daily Life', 'Japanese Work Culture', 'Seasonal Celebrations', 'Traditional vs Modern Japan',
+    'Japanese Technology and Innovation', 'Japanese Literature and Arts'
+  ]
+};
+
+function temporarilyUnavailable(error: unknown) {
+  if (error instanceof GoogleGenerativeAIFetchError) {
+    return error.status !== undefined && (error.status >= 500 || error.status === 429 || error.status === 408);
   }
+  return error instanceof GoogleGenerativeAIAbortError ||
+    (error instanceof GoogleGenerativeAIError && error.message.startsWith('[GoogleGenerativeAI Error]: Error fetching from '));
 }
 
-CRITICAL: 
-1. Content must be in ${language} with authentic cultural elements from ${culturalRegion}
-2. MUST provide contentWithTranslations array with English translations for each sentence
-3. Make it educational and engaging for ${difficulty} level learners`;
+export async function generateReadingArticle(
+  language: IReadingArticle['language'],
+  userLevel: number,
+  completedArticles: number
+) {
+  const starter = completedArticles === 0;
+  const advanced = !starter && (userLevel >= 6 || completedArticles >= 15);
+  const intermediate = !starter && (userLevel >= 3 || completedArticles >= 5);
+  const difficulty = advanced ? 'Advanced' : intermediate ? 'Intermediate' : 'Beginner';
+  const vocabularyDifficulty = advanced ? 3 : intermediate ? 2 : 1;
+  const contentType = READING_CONTENT_TYPES[completedArticles % READING_CONTENT_TYPES.length];
+  const topics = readingTopics[language];
+  const topic = topics[Math.min(completedArticles, topics.length - 1)];
+  const region = language === 'spanish' ? 'Spain' : 'Japan';
+  const length = starter ? '200–300 words' : '400–600 words';
 
-        try {
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const text = response.text();
-            
-            console.log(`✅ Generated personalized ${contentType} article for ${language} (${difficulty})`);
-            return extractJSON(text);
-        } catch (error) {
-            console.error('❌ Article generation failed:', error);
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            throw new Error(`Failed to generate personalized article: ${errorMessage}`);
-        }
-    }
+  const prompt = `Write an engaging, culturally authentic ${difficulty} ${language} reading article about "${topic}" in ${region}.
+Use the ${contentType} format. The learner is level ${userLevel} and has completed ${completedArticles} articles.
+Aim for ${length}. Keep content under 3000 characters, and keep the title and preview under 200 characters each.
+Provide English translations for each original sentence or paragraph, pronunciation guides, cultural context,
+grammar examples, comprehension questions with zero-based correctAnswer indexes, and interactive story choices.
+${starter ? 'Teach basic greetings in a welcoming, beginner-friendly way.' : 'Build on earlier reading practice.'}
 
-    // Generate starter article for new users
-    static async generateStarterArticle(language: 'spanish' | 'japanese') {
-        const starterTopics = {
-            spanish: { topic: 'Daily Greetings and Introductions', region: 'Spain' },
-            japanese: { topic: 'Japanese Greetings and Politeness', region: 'Japan' }
-        };
-
-        const { topic, region } = starterTopics[language];
-
-        const prompt = `Create a perfect starter article for someone beginning to learn ${language}.
-
-Topic: ${topic}
-Cultural Region: ${region}
-Difficulty: Beginner
-Content Type: mini-stories
-
-Make it:
-- Very beginner-friendly with basic vocabulary
-- Culturally authentic and welcoming
-- Include fundamental greetings and expressions
-- Add pronunciation guides
-- Make it encouraging and motivating
-- MUST include English translations for each sentence
-
-Return ONLY this JSON:
+Return JSON with these fields and replace the examples with the actual article:
 {
-  "title": "${topic}",
-  "language": "${language}",
-  "difficulty": "Beginner", 
-  "contentType": "mini-stories",
-  "topic": "${topic}",
-  "estimatedReadTime": 3,
-  "content": "Beginner-friendly article content in ${language} (200-300 words)",
-  "contentWithTranslations": [
-    {
-      "originalText": "First greeting sentence in ${language}",
-      "translation": "English translation",
-      "type": "sentence"
-    },
-    {
-      "originalText": "Second sentence in ${language}",
-      "translation": "English translation",
-      "type": "sentence"
-    }
-  ],
-  "preview": "Welcome to your first ${language} reading experience! Learn essential greetings and cultural basics.",
-  "culturalContext": {
-    "country": "${region}",
-    "backgroundInfo": "Introduction to ${language === 'spanish' ? 'Spanish-speaking' : 'Japanese'} culture and language basics",
-    "culturalTips": ["Cultural tip 1", "Cultural tip 2", "Cultural tip 3"],
-    "learningPoints": ["What beginners will learn"]
-  },
-  "vocabulary": [
-    {
-      "word": "${language === 'japanese' ? 'こんにちは' : 'Hola'}",
-      "definition": "Hello",
-      "pronunciation": "${language === 'japanese' ? 'kon-ni-chi-wa' : '/ˈo.la/'}", 
-      "difficulty": 1,
-      "contextSentence": "Example sentence with this greeting"
-    }
-  ],
-  "grammarPoints": [
-    {
-      "concept": "Basic greetings structure",
-      "explanation": "How greetings work in ${language}",
-      "examples": ["Example 1", "Example 2"]
-    }
-  ],
-  "comprehensionQuestions": [
-    {
-      "question": "Simple comprehension question in ${language}",
-      "options": ["Option 1", "Option 2", "Option 3", "Option 4"],
-      "correctAnswer": 0,
-      "explanation": "Explanation for beginners"
-    }
-  ],
-  "interactiveElements": {
-    "storyChoices": [
-      {
-        "choiceText": "Practice greeting formally",
-        "outcome": "Learn polite greeting expressions",
-        "vocabularyIntroduced": ["polite greeting 1", "polite greeting 2"]
+  "title": "Article title in English",
+  "estimatedReadTime": ${starter ? 3 : 4},
+  "content": "Full article in ${language}",
+  "contentWithTranslations": [{"originalText": "Original text", "translation": "English translation", "type": "sentence"}],
+  "preview": "Short preview",
+  "culturalContext": {"country": "${region}", "backgroundInfo": "Context", "culturalTips": ["Tip"], "learningPoints": ["Learning point"]},
+  "vocabulary": [{"word": "Word", "definition": "English definition", "pronunciation": "Guide", "difficulty": ${vocabularyDifficulty}, "contextSentence": "Example sentence"}],
+  "grammarPoints": [{"concept": "Concept", "explanation": "Explanation", "examples": ["Example"]}],
+  "comprehensionQuestions": [{"question": "Question", "options": ["Option 1", "Option 2", "Option 3", "Option 4"], "correctAnswer": 0, "explanation": "Explanation"}],
+  "interactiveElements": {"storyChoices": [{"choiceText": "Choice", "outcome": "Outcome", "vocabularyIntroduced": ["Word"]}]}
+}`;
+
+  const details = { language, difficulty, contentType, topic };
+  for (const { model, timeout } of [
+    { model: 'gemini-3.5-flash-lite', timeout: 12_000 },
+    { model: 'gemini-3.5-flash', timeout: 22_000 }
+  ]) {
+    const signal = AbortSignal.timeout(timeout);
+    for (let attempt = 0; attempt < 2 && !signal.aborted; attempt += 1) {
+      try {
+        const content = articleContent.parse(await generateGeminiJson(prompt, model, signal));
+        return { ...content, ...details, aiGenerated: true };
+      } catch (error) {
+        if (temporarilyUnavailable(error)) break;
+        if (attempt || !(error instanceof SyntaxError || error instanceof z.ZodError)) throw error;
       }
-    ]
+    }
   }
-}
 
-CRITICAL: MUST include contentWithTranslations array with English translations for each sentence.`;
-
-        try {
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const text = response.text();
-            
-            console.log(`✅ Generated starter article for ${language}`);
-            return extractJSON(text);
-        } catch (error) {
-            console.error('❌ Starter article generation failed:', error);
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            throw new Error(`Failed to generate starter article: ${errorMessage}`);
-        }
-    }
-
-    // Get topic progression based on user progress
-    private static getTopicProgression(language: string, completedArticles: number, lastTopic?: string) {
-        const progressionPaths = {
-            spanish: [
-                { topic: 'Daily Greetings', level: 'basic' },
-                { topic: 'Family and Home', level: 'basic' },
-                { topic: 'Food and Restaurants', level: 'basic' },
-                { topic: 'Shopping and Markets', level: 'intermediate' },
-                { topic: 'Travel and Transportation', level: 'intermediate' },
-                { topic: 'Work and Career', level: 'intermediate' },
-                { topic: 'Spanish Festivals and Traditions', level: 'advanced' },
-                { topic: 'History and Culture', level: 'advanced' },
-                { topic: 'Current Events in Spain', level: 'advanced' }
-            ],
-            japanese: [
-                { topic: 'Japanese Greetings and Politeness', level: 'basic' },
-                { topic: 'Japanese Family Structure', level: 'basic' },
-                { topic: 'Japanese Food Culture', level: 'basic' },
-                { topic: 'Tokyo Daily Life', level: 'intermediate' },
-                { topic: 'Japanese Work Culture', level: 'intermediate' },
-                { topic: 'Seasonal Celebrations', level: 'intermediate' },
-                { topic: 'Traditional vs Modern Japan', level: 'advanced' },
-                { topic: 'Japanese Technology and Innovation', level: 'advanced' },
-                { topic: 'Japanese Literature and Arts', level: 'advanced' }
-            ]
-        };
-
-        const path = progressionPaths[language as keyof typeof progressionPaths];
-        const topicIndex = Math.min(completedArticles, path.length - 1);
-        
-        return path[topicIndex];
-    }
+  if (!starter) return null;
+  const { passages, ...starterContent } = readingStarters[language];
+  const contentWithTranslations = passages.map(([originalText, translation]) => ({
+    originalText, translation, type: 'paragraph'
+  }));
+  const content = articleContent.parse({
+    ...starterContent,
+    content: contentWithTranslations.map(passage => passage.originalText).join('\n\n'),
+    contentWithTranslations,
+    estimatedReadTime: 2,
+    interactiveElements: { storyChoices: [] }
+  });
+  return { ...content, ...details, aiGenerated: false };
 }

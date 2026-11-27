@@ -1,0 +1,378 @@
+@font-face {
+  font-family: "Klee One";
+  src: url("../../node_modules/@fontsource/klee-one/files/klee-one-119-400-normal.woff2") format("woff2");
+  font-display: swap;
+}
+.app-shell[data-page="notes"] {
+  background:
+    linear-gradient(180deg, var(--swara-scene), var(--swara-ground) 510px),
+    url("../assets/companion-terrace.webp") center top / cover fixed;
+  color: var(--swara-ui-text);
+}
+.folio-page { width: 100%; }
+.folio-guest { display: grid; gap: 12px; justify-items: start; }
+.folio-guest p { max-inline-size: 48ch; color: var(--swara-ui-muted); line-height: 1.65; }
+.folio :is(h1, h2, h3, p, ul) {
+  margin: 0;
+}
+.folio :is(h1, h2, h3) {
+  font-family: var(--swara-font-display);
+  font-weight: 450;
+  line-height: 1.08;
+  overflow-wrap: anywhere;
+}
+.folio :is(button, a):not(:where(.swara-action)) {
+  display: inline-flex;
+  gap: var(--swara-gap);
+  align-items: center;
+  min-height: var(--swara-control);
+  padding: 6px 10px;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--swara-radius-control);
+  text-decoration: none;
+  font:
+    650 var(--swara-size-control) var(--swara-font-ui);
+}
+.folio :is(button, a):not(:where(.swara-action)):hover {
+  background: var(--swara-ui-hover);
+}
+.folio svg {
+  width: var(--swara-icon);
+  height: var(--swara-icon);
+  flex: none;
+}
+.sheet-tools,
+.sheet-footer,
+.sheet-save,
+.review-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.folio-label,
+.folio-group > h2 {
+  font:
+    750 11px/1.5 var(--swara-font-ui);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--swara-ui-accent);
+}
+.folio-controls, .folio-filter-bar, .folio-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.folio-controls { margin-bottom: 10px; justify-content: space-between; }
+.folio-filter-bar { justify-content: space-between; margin-bottom: 12px; }
+.folio-filters { gap: 2px 5px; }
+.folio .folio-filters button[aria-pressed="true"] {
+  color: var(--swara-ui-accent);
+  background: var(--swara-ui-wash);
+  box-shadow: inset 0 -2px var(--swara-ui-accent);
+}
+.folio .folio-review { color: var(--swara-ui-accent); }
+.folio .folio-feedback { color: var(--swara-ui-error); margin-bottom: 12px; }
+.folio-search {
+  flex: 1 1 120px;
+  min-width: 0;
+  max-width: 390px;
+  display: flex;
+  align-items: center;
+  padding-inline: 12px 0;
+  border: 1px solid var(--swara-ui-line);
+  border-radius: var(--swara-radius-control);
+  background: var(--swara-ui-wash);
+}
+.folio-search:focus-within {
+  outline: 2px solid var(--swara-ui-accent);
+  outline-offset: 2px;
+}
+.folio-search input {
+  flex: 1;
+  width: 0;
+  min-height: var(--swara-control);
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--swara-ui-text);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.folio .folio-search input:focus {
+  outline: none;
+  box-shadow: none;
+}
+.folio-search input::placeholder {
+  color: var(--swara-ui-muted);
+}
+.folio-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.folio-search button {
+  justify-content: center;
+  min-width: 44px;
+}
+.sheet-fields :is(input, select) {
+  width: 100%;
+  min-height: var(--swara-control);
+  border: 1px solid var(--swara-ui-line);
+  border-radius: 5px;
+  padding: 8px 12px;
+  color: inherit;
+  background: transparent;
+}
+.folio-pages {
+  padding: clamp(14px,2vw,26px) clamp(12px,2.4vw,34px);
+  border-radius: var(--swara-radius-control);
+  background: var(--swara-paper) url("../assets/reading-paper-grain.webp");
+  color: var(--swara-ui-text);
+}
+.folio-group + .folio-group {
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--swara-ui-line);
+}
+.folio-group h2 {
+  font:
+    750 11px/1.4 var(--swara-font-ui);
+  color: var(--swara-paper-accent);
+}
+.folio-group ul {
+  padding: 0;
+  list-style: none;
+}
+.folio-group li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; }
+.folio-group li + li {
+  border-top: 1px solid var(--swara-ui-line);
+}
+.folio-group a {
+  display: flex;
+  width: 100%;
+  border-radius: 6px;
+  padding: 10px 8px;
+}
+.folio-group a:is(:hover, :focus-visible) {
+  background: var(--swara-ui-wash);
+}
+.folio-note-text {
+  min-width: 0;
+  flex: 1;
+}
+.folio-note-title {
+  display: block; font: 450 clamp(22px,2.15vw,30px)/1.08 var(--swara-font-display);
+  overflow-wrap: anywhere;
+}
+.folio-group a p {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--swara-size-control);
+  font-weight: 450;
+  color: var(--swara-ui-muted);
+  margin-top: 3px;
+  max-inline-size: 76ch;
+}
+.folio-note-meta {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 3px;
+  color: var(--swara-ui-muted); font-size: var(--swara-size-small); font-weight: 540;
+}
+.folio-note-meta small { color: var(--swara-paper-accent); font-size: inherit; }
+.folio .folio-star { justify-content: center; min-width: var(--swara-control); color: var(--swara-ui-muted); }
+.folio .folio-star[aria-pressed="true"] { color: var(--swara-paper-accent); }
+.folio-empty,
+.folio-welcome {
+  padding: clamp(20px,4vw,44px);
+  color: var(--swara-ui-text);
+  background: var(--swara-paper) url("../assets/reading-paper-grain.webp");
+}
+.folio-empty {
+  margin-top: 18px;
+}
+.folio-no-results {
+  margin-top: 0;
+}
+.folio-empty,
+.folio-welcome {
+  border-radius: var(--swara-radius-control);
+}
+.folio-welcome {
+  background-image: linear-gradient(rgb(from var(--swara-paper) r g b / .7), rgb(from var(--swara-paper) r g b / .7)), url("../assets/reading-paper-grain.webp");
+  background-blend-mode: normal;
+}
+.folio-empty h2 {
+  margin-bottom: 8px;
+  font-size: clamp(27px,3vw,38px);
+}
+.folio-empty p,
+.folio-welcome p {
+  max-width: 46ch;
+  line-height: 1.7;
+  margin-bottom: 14px;
+}
+.writing-sheet {
+  --sheet-inset: clamp(16px,3.2vw,42px);
+  background: var(--swara-paper) url("../assets/reading-paper-grain.webp");
+  color: var(--swara-ui-text);
+  border-radius: var(--swara-radius-control);
+  overflow: clip;
+  color-scheme: light;
+}
+.sheet-content { padding: clamp(20px,3vw,42px) var(--sheet-inset); }
+.sheet-tools,
+.sheet-footer {
+  padding: 5px var(--sheet-inset);
+  border-bottom: 1px solid var(--swara-ui-line);
+}
+.sheet-tools { position: sticky; top: 0; z-index: 2; background: var(--swara-paper); }
+.sheet-save { flex: 1; justify-content: center; min-width: 0; gap: 2px 8px; }
+.sheet-save[data-attention] { flex-basis: 100%; order: 1; justify-content: flex-start; padding: 0 0 4px 10px; }
+.sheet-save button, .sheet-save [role="alert"] { color: var(--swara-paper-accent); }
+.save-status {
+  font-size: 13px;
+  color: var(--swara-ui-muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-wrap: anywhere;
+}
+.sheet-content h2, .folio-welcome h2 {
+  font-size: clamp(32px, 4vw, 55px);
+}
+.sheet-heading {
+  min-width: 0;
+}
+.sheet-content .sheet-title,
+.sheet-title-input {
+  width: 100%;
+  min-height: var(--swara-control);
+  padding: 4px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font:
+    450 clamp(32px, 4vw, 55px)/1.08 var(--swara-font-display);
+  letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
+}
+.sheet-content .sheet-title {
+  text-align: start;
+  justify-content: flex-start;
+  align-items: baseline;
+  gap: 10px;
+}
+.sheet-title span { min-width: 0; }
+.sheet-title svg {
+  color: var(--swara-paper-accent);
+}
+.sheet-title-input {
+  display: block;
+  field-sizing: content;
+  resize: none;
+}
+.sheet-title-input::placeholder {
+  color: var(--swara-ui-muted);
+}
+.sheet-body {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 240px;
+  min-height: 8lh;
+  field-sizing: content;
+  resize: none;
+  margin-top: 13px;
+  padding: 12px 0 0;
+  border: none;
+  border-top: 1px solid var(--swara-ui-line);
+  background: transparent;
+  color: inherit;
+  font:
+    450 clamp(19px, 2vw, 23px)/1.6 var(--swara-font-display);
+}
+.folio[data-language="japanese"] .sheet-body {
+  font-family: "Klee One", var(--swara-font-display);
+}
+.sheet-footer {
+  border-top: 1px solid var(--swara-ui-line);
+  border-bottom: 0;
+  align-items: flex-start;
+}
+.sheet-footer details {
+  flex: 1;
+  min-width: 0;
+}
+.sheet-footer details[open] {
+  flex-basis: 100%;
+}
+.sheet-footer summary {
+  cursor: pointer;
+  padding: 12px 4px;
+  font-size: var(--swara-size-control);
+}
+.sheet-fields {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 15px;
+}
+.sheet-fields label {
+  font-size: 13px;
+  display: grid;
+  gap: 4px;
+}
+.review-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    22px/1.6 var(--swara-font-display);
+}
+.review-content { display: grid; justify-items: start; gap: 12px; }
+.review-content .review-body { padding-inline-start: 12px; border-inline-start: 2px solid var(--swara-ui-line); }
+.review-actions { justify-content: flex-start; gap: 4px 8px; }
+.folio-pages,
+.writing-sheet,
+.folio-empty {
+  background-blend-mode: multiply;
+}
+.sheet-content .sheet-body:focus-visible {
+  outline: none;
+  border-top-color: var(--swara-paper-accent);
+  box-shadow: inset 0 1px var(--swara-paper-accent);
+  caret-color: var(--swara-paper-accent);
+}
+.app-shell[data-page="notes"]:has(.note-composer-sheet) .workspace-header .language-switch { display: none; }
+@media (forced-colors: active) {
+  .sheet-content .sheet-body:focus-visible { border-top: 2px solid Highlight; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .folio :is(button, a) {
+    transition:
+      background-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+  .folio .folio-review svg {
+    transition: transform 150ms ease;
+  }
+  .folio-review:is(:hover, :focus-visible) svg {
+    transform: translateX(3px);
+  }
+}
+.folio-confirm {
+  margin: auto;
+  padding: 25px;
+  max-width: 90vw;
+}
+.folio-confirm h2 { margin-bottom: 14px; font-size: 26px; }
+.folio-confirm-actions { display: flex; flex-wrap: wrap; gap: var(--swara-gap); }
+@media (max-width: 700px), (hover: none) {
+  .sheet-tools {
+    gap: 4px;
+  }
+  .sheet-save { justify-content: flex-end; }
+}

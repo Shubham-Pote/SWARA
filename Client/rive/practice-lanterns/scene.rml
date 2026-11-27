@@ -1,0 +1,121 @@
+<Rive version="1" kind="fragment">
+  <Artboard name="Terrace lanterns" width="180" height="86" viewModelId="0:40" viewModelInstanceId="0:41" defaultStateMachineId="0:7">
+    <Shape x="90" y="8" name="Hanging rail"><Rectangle width="166" height="2"/><Fill><SolidColor colorValue="FFA78D75"/></Fill></Shape>
+    <Node x="39" y="42" name="Lantern 1">
+      <Shape y="29" name="Tassel"><Rectangle width="3" height="12"/><Fill><SolidColor colorValue="FFCA996C"/></Fill></Shape>
+      <Shape y="-21" name="Top rim"><Rectangle width="25" height="5" cornerRadiusTL="2"/><Fill><SolidColor colorValue="FFC5A887"/></Fill></Shape>
+      <Shape y="21" name="Lower rim"><Rectangle width="23" height="5" cornerRadiusTL="2"/><Fill><SolidColor colorValue="FFC5A887"/></Fill></Shape>
+      <Shape name="Paper seams"><Ellipse width="20" height="43"/><Stroke thickness="1"><SolidColor colorValue="997C665A"/></Stroke></Shape>
+      <Shape name="Rice paper"><Ellipse width="39" height="45"/><Fill><SolidColor id="0:101" colorValue="FF50515C"/></Fill><Stroke thickness="1.4"><SolidColor colorValue="FFB49A84"/></Stroke></Shape>
+      <Shape y="-27" name="Cord"><Rectangle width="1.5" height="14"/><Fill><SolidColor colorValue="FFAA9683"/></Fill></Shape>
+      <Shape name="Lamplight"><Ellipse width="59" height="60"/><Fill><SolidColor id="0:102" colorValue="00F5BF70"/></Fill></Shape>
+    </Node>
+    <Node x="90" y="48" name="Lantern 2">
+      <Shape y="29" name="Tassel"><Rectangle width="3" height="12"/><Fill><SolidColor colorValue="FFCA996C"/></Fill></Shape>
+      <Shape y="-21" name="Top rim"><Rectangle width="25" height="5" cornerRadiusTL="2"/><Fill><SolidColor colorValue="FFC5A887"/></Fill></Shape>
+      <Shape y="21" name="Lower rim"><Rectangle width="23" height="5" cornerRadiusTL="2"/><Fill><SolidColor colorValue="FFC5A887"/></Fill></Shape>
+      <Shape name="Paper seams"><Ellipse width="20" height="43"/><Stroke thickness="1"><SolidColor colorValue="997C665A"/></Stroke></Shape>
+      <Shape name="Rice paper"><Ellipse width="39" height="45"/><Fill><SolidColor id="0:201" colorValue="FF50515C"/></Fill><Stroke thickness="1.4"><SolidColor colorValue="FFB49A84"/></Stroke></Shape>
+      <Shape y="-30" name="Cord"><Rectangle width="1.5" height="20"/><Fill><SolidColor colorValue="FFAA9683"/></Fill></Shape>
+      <Shape name="Lamplight"><Ellipse width="59" height="60"/><Fill><SolidColor id="0:202" colorValue="00F5BF70"/></Fill></Shape>
+    </Node>
+    <Node x="141" y="41" name="Lantern 3">
+      <Shape y="29" name="Tassel"><Rectangle width="3" height="12"/><Fill><SolidColor colorValue="FFCA996C"/></Fill></Shape>
+      <Shape y="-21" name="Top rim"><Rectangle width="25" height="5" cornerRadiusTL="2"/><Fill><SolidColor colorValue="FFC5A887"/></Fill></Shape>
+      <Shape y="21" name="Lower rim"><Rectangle width="23" height="5" cornerRadiusTL="2"/><Fill><SolidColor colorValue="FFC5A887"/></Fill></Shape>
+      <Shape name="Paper seams"><Ellipse width="20" height="43"/><Stroke thickness="1"><SolidColor colorValue="997C665A"/></Stroke></Shape>
+      <Shape name="Rice paper"><Ellipse width="39" height="45"/><Fill><SolidColor id="0:301" colorValue="FF50515C"/></Fill><Stroke thickness="1.4"><SolidColor colorValue="FFB49A84"/></Stroke></Shape>
+      <Shape y="-26.5" name="Cord"><Rectangle width="1.5" height="13"/><Fill><SolidColor colorValue="FFAA9683"/></Fill></Shape>
+      <Shape name="Lamplight"><Ellipse width="59" height="60"/><Fill><SolidColor id="0:302" colorValue="00F5BF70"/></Fill></Shape>
+    </Node>
+    <LinearAnimation duration="1" name="Lantern 1 resting" id="0:110">
+      <KeyedObject objectId="0:101"><KeyedProperty propertyKey="37"><KeyFrameColor value="FF50515C"/></KeyedProperty></KeyedObject>
+      <KeyedObject objectId="0:102"><KeyedProperty propertyKey="37"><KeyFrameColor value="00F5BF70"/></KeyedProperty></KeyedObject>
+    </LinearAnimation>
+    <LinearAnimation duration="1" name="Lantern 1 lit" id="0:111">
+      <KeyedObject objectId="0:101"><KeyedProperty propertyKey="37"><KeyFrameColor value="FFFFCD80"/></KeyedProperty></KeyedObject>
+      <KeyedObject objectId="0:102"><KeyedProperty propertyKey="37"><KeyFrameColor value="29F5BF70"/></KeyedProperty></KeyedObject>
+    </LinearAnimation>
+    <LinearAnimation duration="1" name="Lantern 2 resting" id="0:210">
+      <KeyedObject objectId="0:201"><KeyedProperty propertyKey="37"><KeyFrameColor value="FF50515C"/></KeyedProperty></KeyedObject>
+      <KeyedObject objectId="0:202"><KeyedProperty propertyKey="37"><KeyFrameColor value="00F5BF70"/></KeyedProperty></KeyedObject>
+    </LinearAnimation>
+    <LinearAnimation duration="1" name="Lantern 2 lit" id="0:211">
+      <KeyedObject objectId="0:201"><KeyedProperty propertyKey="37"><KeyFrameColor value="FFFFCD80"/></KeyedProperty></KeyedObject>
+      <KeyedObject objectId="0:202"><KeyedProperty propertyKey="37"><KeyFrameColor value="29F5BF70"/></KeyedProperty></KeyedObject>
+    </LinearAnimation>
+    <LinearAnimation duration="1" name="Lantern 3 resting" id="0:310">
+      <KeyedObject objectId="0:301"><KeyedProperty propertyKey="37"><KeyFrameColor value="FF50515C"/></KeyedProperty></KeyedObject>
+      <KeyedObject objectId="0:302"><KeyedProperty propertyKey="37"><KeyFrameColor value="00F5BF70"/></KeyedProperty></KeyedObject>
+    </LinearAnimation>
+    <LinearAnimation duration="1" name="Lantern 3 lit" id="0:311">
+      <KeyedObject objectId="0:301"><KeyedProperty propertyKey="37"><KeyFrameColor value="FFFFCD80"/></KeyedProperty></KeyedObject>
+      <KeyedObject objectId="0:302"><KeyedProperty propertyKey="37"><KeyFrameColor value="29F5BF70"/></KeyedProperty></KeyedObject>
+    </LinearAnimation>
+    <StateMachine name="Practice week" id="0:7">
+      <StateMachineLayer name="Lantern 1">
+        <AnyState/><ExitState/><EntryState><StateTransition stateToId="0:120"/></EntryState>
+        <AnimationState stateName="Resting" id="0:120" animationId="0:110">
+          <StateTransition stateToId="0:121" duration="260" enableEarlyExit="true">
+            <TransitionViewModelCondition opValue="greaterThanOrEqual">
+              <TransitionPropertyViewModelComparator><BindablePropertyNumber><DataBindContext sourcePathIds="0:40-0:42" propertyKey="636"/></BindablePropertyNumber></TransitionPropertyViewModelComparator>
+              <TransitionValueNumberComparator value="1"/>
+            </TransitionViewModelCondition>
+          </StateTransition>
+        </AnimationState>
+        <AnimationState stateName="Lit" id="0:121" animationId="0:111">
+          <StateTransition stateToId="0:120" duration="260" enableEarlyExit="true">
+            <TransitionViewModelCondition opValue="lessThan">
+              <TransitionPropertyViewModelComparator><BindablePropertyNumber><DataBindContext sourcePathIds="0:40-0:42" propertyKey="636"/></BindablePropertyNumber></TransitionPropertyViewModelComparator>
+              <TransitionValueNumberComparator value="1"/>
+            </TransitionViewModelCondition>
+          </StateTransition>
+        </AnimationState>
+      </StateMachineLayer>
+      <StateMachineLayer name="Lantern 2">
+        <AnyState/><ExitState/><EntryState><StateTransition stateToId="0:220"/></EntryState>
+        <AnimationState stateName="Resting" id="0:220" animationId="0:210">
+          <StateTransition stateToId="0:221" duration="260" enableEarlyExit="true">
+            <TransitionViewModelCondition opValue="greaterThanOrEqual">
+              <TransitionPropertyViewModelComparator><BindablePropertyNumber><DataBindContext sourcePathIds="0:40-0:42" propertyKey="636"/></BindablePropertyNumber></TransitionPropertyViewModelComparator>
+              <TransitionValueNumberComparator value="2"/>
+            </TransitionViewModelCondition>
+          </StateTransition>
+        </AnimationState>
+        <AnimationState stateName="Lit" id="0:221" animationId="0:211">
+          <StateTransition stateToId="0:220" duration="260" enableEarlyExit="true">
+            <TransitionViewModelCondition opValue="lessThan">
+              <TransitionPropertyViewModelComparator><BindablePropertyNumber><DataBindContext sourcePathIds="0:40-0:42" propertyKey="636"/></BindablePropertyNumber></TransitionPropertyViewModelComparator>
+              <TransitionValueNumberComparator value="2"/>
+            </TransitionViewModelCondition>
+          </StateTransition>
+        </AnimationState>
+      </StateMachineLayer>
+      <StateMachineLayer name="Lantern 3">
+        <AnyState/><ExitState/><EntryState><StateTransition stateToId="0:320"/></EntryState>
+        <AnimationState stateName="Resting" id="0:320" animationId="0:310">
+          <StateTransition stateToId="0:321" duration="260" enableEarlyExit="true">
+            <TransitionViewModelCondition opValue="greaterThanOrEqual">
+              <TransitionPropertyViewModelComparator><BindablePropertyNumber><DataBindContext sourcePathIds="0:40-0:42" propertyKey="636"/></BindablePropertyNumber></TransitionPropertyViewModelComparator>
+              <TransitionValueNumberComparator value="3"/>
+            </TransitionViewModelCondition>
+          </StateTransition>
+        </AnimationState>
+        <AnimationState stateName="Lit" id="0:321" animationId="0:311">
+          <StateTransition stateToId="0:320" duration="260" enableEarlyExit="true">
+            <TransitionViewModelCondition opValue="lessThan">
+              <TransitionPropertyViewModelComparator><BindablePropertyNumber><DataBindContext sourcePathIds="0:40-0:42" propertyKey="636"/></BindablePropertyNumber></TransitionPropertyViewModelComparator>
+              <TransitionValueNumberComparator value="3"/>
+            </TransitionViewModelCondition>
+          </StateTransition>
+        </AnimationState>
+      </StateMachineLayer>
+    </StateMachine>
+  </Artboard>
+  <ViewModel name="Week" id="0:40" defaultInstanceId="0:41">
+    <ViewModelPropertyNumber name="practiceDays" id="0:42"/>
+    <ViewModelInstance name="This week" id="0:41" exports="true">
+      <ViewModelInstanceNumber propertyValue="0" viewModelPropertyId="0:42"/>
+    </ViewModelInstance>
+  </ViewModel>
+</Rive>

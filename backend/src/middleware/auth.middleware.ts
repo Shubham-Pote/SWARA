@@ -1,8 +1,7 @@
-// middleware/auth.middleware.ts - UPDATED VERSION
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+import { isObjectIdOrHexString } from 'mongoose';
+import { getJwtSecret } from '../config/auth';
 
 // Extend Express Request type to include user
 declare global {
@@ -13,32 +12,38 @@ declare global {
     }
 }
 
-export const authMiddleware = async (
+export const authMiddleware = (
     req: Request,
     res: Response,
     next: NextFunction
-): Promise<void> => {
-    try {
-        const token = req.header('Authorization')?.replace('Bearer ', '');
+): void => {
+    const authorization = req.header('Authorization');
+    if (!authorization) {
+        res.status(401).json({
+            success: false,
+            message: 'No authentication token, access denied'
+        });
+        return;
+    }
 
-        if (!token) {
-            res.status(401).json({ 
-                success: false, 
-                message: 'No authentication token, access denied' 
-            });
+    const secret = getJwtSecret();
+    if (!secret) {
+        res.status(503).json({ success: false, message: 'Authentication is unavailable' });
+        return;
+    }
+
+    try {
+        const [, token] = /^Bearer +([^\s]+)$/i.exec(authorization) ?? [];
+        const decoded = jwt.verify(token, secret, { algorithms: ['HS256'] });
+        if (typeof decoded === 'string' || typeof decoded.userId !== 'string' ||
+            !isObjectIdOrHexString(decoded.userId) || typeof decoded.exp !== 'number') {
+            res.status(401).json({ success: false, message: 'Token is not valid' });
             return;
         }
-
-        const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
-        
-        // FIXED: Only assign userId (no 'id' property)
         req.user = { userId: decoded.userId };
-        
-        next();
-    } catch (error) {
-        res.status(401).json({ 
-            success: false, 
-            message: 'Token is not valid' 
-        });
+    } catch {
+        res.status(401).json({ success: false, message: 'Token is not valid' });
+        return;
     }
+    next();
 };

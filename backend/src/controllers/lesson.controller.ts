@@ -1,622 +1,349 @@
 import { Request, Response } from 'express';
-import Lesson from '../models/lesson';
-import Progress from '../models/progress';
-import UserStats from '../models/userStats';
-import User from '../models/user';
+import { Error as MongooseError, isObjectIdOrHexString, mongo } from 'mongoose';
+import { z } from 'zod';
+import Lesson, { ILesson } from '../models/lesson';
+import Progress, { IProgress } from '../models/progress';
+import UserStats, { getOrCreateUserStats } from '../models/userStats';
 import { generateLessonContent } from '../services/gemini.service';
+import { countConsecutiveCompletionDays } from '../utils/completionStreak';
 
-interface AuthRequest extends Request {
-  user?: { userId: string };
+const lessonLanguage = z.enum(['spanish', 'japanese']);
+const invalidLanguage = 'Invalid language. Must be "spanish" or "japanese"';
+const completedStatuses = ['completed', 'mastered'];
+const writeAttempts = 5;
+
+const progressInput = z.object({
+  language: lessonLanguage,
+  currentStep: z.number().int().nonnegative().default(0),
+  totalSteps: z.number().int().nonnegative().optional(),
+  score: z.number().min(0).max(100).default(0),
+  timeSpent: z.number().finite().nonnegative().default(0),
+  mistakes: z.array(z.string()).optional(),
+  completed: z.boolean().default(false)
+});
+
+const generationInput = z.object({
+  language: lessonLanguage,
+  topic: z.string().trim().min(1),
+  difficulty: z.enum(['Beginner', 'Intermediate', 'Advanced']),
+  lessonType: z.string().trim().min(1).default('practice'),
+  generateAudio: z.boolean().default(false)
+});
+
+function progressDetails(progress?: IProgress) {
+  return {
+    status: progress?.status ?? 'not_started',
+    currentStep: progress?.currentStep ?? 0,
+    progress: progress?.progress ?? 0,
+    completed: progress?.completed ?? false,
+    score: progress?.score ?? 0,
+    timeSpent: progress?.timeSpent ?? 0
+  };
 }
 
-// Define extended lesson type with progress properties
-interface LessonWithProgress {
-  _id: any;
-  title: string;
-  description: string;
-  language: 'spanish' | 'japanese';
-  difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
-  level: number;
-  estimatedMinutes: number;
-  xpReward: number;
-  prerequisites: any[];
-  order: number;
-  steps: any[];
-  culturalNotes?: string;
-  isActive: boolean;
-  createdAt?: Date;
-  updatedAt?: Date;
-  // Progress properties
-  progress: number;
-  completed: boolean;
-  currentStep: number;
-  score: number;
-  timeSpent: number;
-  status: string;
-}
+export const getLessonsByLanguage = async (req: Request, res: Response): Promise<void> => {
+  const language = lessonLanguage.safeParse(req.params.language);
+  if (!language.success) {
+    res.status(400).json({ success: false, message: invalidLanguage });
+    return;
+  }
 
-// Get lessons by language
-export const getLessonsByLanguage = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { language } = req.params;
-    
-    if (!['spanish', 'japanese'].includes(language)) {
-      res.status(400).json({ 
-        success: false, 
-        message: 'Invalid language. Must be "spanish" or "japanese"' 
-      });
-      return;
-    }
-
-    const lessons = await Lesson.find({ language, isActive: true }).sort({ order: 1, level: 1 });
-    
-    let progress: any[] = [];
-    if (req.user?.userId) {
-      progress = await Progress.find({
-        userId: req.user.userId,
-        language: language
-      });
-    }
-
-    const lessonsWithProgress: LessonWithProgress[] = lessons.map(lesson => {
-      const userProgress = progress.find(p => 
-        p.lessonId?.toString() === lesson._id.toString()
-      );
-      
-      // Create a new object with both lesson data and progress data
-      const lessonWithProgress: LessonWithProgress = {
-        _id: lesson._id,
-        title: lesson.title,
-        description: lesson.description,
-        language: lesson.language,
-        difficulty: lesson.difficulty,
-        level: lesson.level,
-        estimatedMinutes: lesson.estimatedMinutes,
-        xpReward: lesson.xpReward,
-        prerequisites: lesson.prerequisites,
-        order: lesson.order,
-        steps: lesson.steps,
-        culturalNotes: lesson.culturalNotes,
-        isActive: lesson.isActive,
-        createdAt: lesson.createdAt,
-        updatedAt: lesson.updatedAt,
-        // Progress properties
-        progress: userProgress?.progress || 0,
-        completed: userProgress?.completed || false,
-        currentStep: userProgress?.currentStep || 0,
-        score: userProgress?.score || 0,
-        timeSpent: userProgress?.timeSpent || 0,
-        status: userProgress?.status || 'not_started'
-      };
-      
-      return lessonWithProgress;
-    });
+    const [lessons, progress] = await Promise.all([
+      Lesson.find({ language: language.data, isActive: true })
+        .select('title description language difficulty level estimatedMinutes xpReward prerequisites order steps culturalNotes isActive createdAt updatedAt')
+        .sort({ order: 1, level: 1 }),
+      Progress.find({ userId: req.user!.userId, language: language.data })
+    ]);
+    const progressByLesson = new Map(progress.map(item => [item.lessonId?.toString(), item]));
 
     res.json({
       success: true,
-      lessons: lessonsWithProgress,
-      language: language
+      lessons: lessons.map(lesson => ({
+        ...lesson.toObject(),
+        ...progressDetails(progressByLesson.get(lesson._id.toString()))
+      })),
+      language: language.data
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Get lessons error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error fetching lessons' 
-    });
+    res.status(500).json({ success: false, message: 'Error fetching lessons' });
   }
 };
 
-// Get lesson by ID
-export const getLessonById = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getLessonById = async (req: Request, res: Response): Promise<void> => {
+  const { lessonId } = req.params;
+  if (!isObjectIdOrHexString(lessonId)) {
+    res.status(400).json({ success: false, message: 'Invalid lesson ID' });
+    return;
+  }
+
   try {
-    const { lessonId } = req.params;
-    
     const lesson = await Lesson.findById(lessonId);
-    
     if (!lesson) {
-      res.status(404).json({ 
-        success: false, 
-        message: 'Lesson not found' 
-      });
+      res.status(404).json({ success: false, message: 'Lesson not found' });
       return;
     }
 
-    let progress = null;
-    if (req.user?.userId) {
-      progress = await Progress.findOne({
-        userId: req.user.userId,
-        lessonId: lesson._id
-      });
-    }
-
+    const progress = await Progress.findOne({ userId: req.user!.userId, lessonId });
+    const lastStep = Math.max(0, (lesson.steps?.length ?? 0) - 1);
     res.json({
       success: true,
       lesson: {
         ...lesson.toObject(),
-        progress: progress ? {
-          status: progress.status,
-          currentStep: progress.currentStep,
-          progress: progress.progress,
-          completed: progress.completed,
-          score: progress.score,
-          timeSpent: progress.timeSpent
-        } : null
+        // LessonView reports the step it just finished, before advancing.
+        currentProgress: progress && !progress.completed ? Math.min(progress.currentStep + 1, lastStep) : 0,
+        completed: progress?.completed ?? false,
+        progress: progress ? progressDetails(progress) : null
       }
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Get lesson error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error fetching lesson' 
-    });
+    res.status(500).json({ success: false, message: 'Error fetching lesson' });
   }
 };
 
-// FIXED: Update lesson progress with proper XP and time tracking
-export const updateLessonProgress = async (req: AuthRequest, res: Response): Promise<void> => {
+async function saveProgress(userId: string, lesson: ILesson, input: z.infer<typeof progressInput>) {
+  const key = { userId, lessonId: lesson._id };
+
+  for (let attempt = 0; attempt < writeAttempts; attempt += 1) {
+    const existing = await Progress.findOne(key);
+    const progress = existing ?? new Progress({ ...key, language: lesson.language });
+    const totalSteps = lesson.steps?.length || existing?.totalSteps || input.totalSteps || 5;
+    const lastStep = totalSteps - 1;
+    const finishing = input.currentStep >= lastStep && (input.completed || input.score > 0);
+    const submittedStep = Math.min(input.currentStep, lastStep);
+    if (existing && existing.lastSubmittedStep === submittedStep && (!finishing || existing.completed)) {
+      // A multi-step review sends an earlier step before it can finish again.
+      if (finishing && existing.completed && totalSteps > 1 && input.score <= existing.score) return existing;
+      // Recover a previously saved step when its stats receipt is still behind.
+      const receiptPath = `${lesson.language}.lessonReceipts.${lesson.id}`;
+      const stats = await UserStats.findOne({ userId }).select(receiptPath);
+      const receipt = stats?.[lesson.language].lessonReceipts?.get(lesson.id);
+      if ((existing.statsSync.xpReward && !receipt?.xpAwarded) ||
+          (receipt?.timeSpent ?? 0) < existing.statsSync.timeSpent) return existing;
+    }
+
+    progress.language = lesson.language;
+    progress.lastSubmittedStep = submittedStep;
+    progress.currentStep = Math.min(Math.max(progress.currentStep, input.currentStep), lastStep);
+    progress.totalSteps = totalSteps;
+    progress.score = Math.max(progress.score, input.score);
+    progress.timeSpent += input.timeSpent;
+    progress.statsSync.timeSpent += input.timeSpent;
+    progress.lastAccessed = new Date();
+    if (existing) progress.attempts += 1;
+    if (input.mistakes?.length) progress.mistakes = [...new Set([...(progress.mistakes ?? []), ...input.mistakes])];
+
+    if (finishing || progress.completed) {
+      progress.status = progress.score >= 90 ? 'mastered' : 'completed';
+      progress.completedAt ??= progress.lastAccessed;
+      if (!progress.xpAwarded) {
+        progress.xpAwarded = true;
+        progress.statsSync.xpReward = lesson.xpReward || 50;
+        progress.statsSync.score = progress.score;
+      }
+    } else {
+      progress.status = 'in_progress';
+    }
+
+    // Old imports may lack the version key used by Mongoose's optimistic concurrency.
+    if (existing && progress.get('__v') === undefined) progress.$where = { __v: { $exists: false } };
+
+    try {
+      return await progress.save();
+    } catch (error) {
+      const duplicateInsert = !existing && error instanceof mongo.MongoServerError && error.code === 11000;
+      if (!(error instanceof MongooseError.VersionError) && !duplicateInsert) throw error;
+    }
+  }
+
+  throw new Error('Lesson progress changed during each write attempt');
+}
+
+async function calculateStreak(progress: IProgress) {
+  const completed = await Progress.find({
+    userId: progress.userId,
+    language: progress.language,
+    status: { $in: completedStatuses },
+    completedAt: { $exists: true }
+  }).select('completedAt').sort({ completedAt: -1 }).lean();
+
+  return countConsecutiveCompletionDays(completed);
+}
+
+async function syncLessonStats(progress: IProgress) {
+  const { userId, language, lessonId, statsSync } = progress;
+  const receiptField = `${language}.lessonReceipts.${lessonId}`;
+  const versionField = `${language}.lessonStatsVersion`;
+
+  for (let attempt = 0; attempt < writeAttempts; attempt += 1) {
+    const userStats = await getOrCreateUserStats(userId);
+    const stats = userStats[language];
+    const receipt = stats.lessonReceipts?.get(lessonId.toString());
+    const recordedTime = receipt?.timeSpent ?? 0;
+    const timeToAdd = Math.max(0, statsSync.timeSpent - recordedTime);
+    const xp = receipt?.xpAwarded ? 0 : (statsSync.xpReward ?? 0);
+    if (!xp && !timeToAdd) return 0;
+
+    // Write the totals and their receipt together so replaying a saved snapshot is safe.
+    const fields: Record<string, number | { timeSpent: number; xpAwarded: boolean }> = {
+      [versionField]: (stats.lessonStatsVersion ?? 0) + 1,
+      [receiptField]: { timeSpent: Math.max(recordedTime, statsSync.timeSpent), xpAwarded: Boolean(receipt?.xpAwarded || xp) },
+      [`${language}.timeSpent`]: (stats.timeSpent || 0) + timeToAdd
+    };
+
+    if (xp) {
+      const totalXP = (stats.totalXP || 0) + xp;
+      const lessonsCompleted = (stats.lessonsCompleted || 0) + 1;
+      fields[`${language}.totalXP`] = totalXP;
+      fields[`${language}.level`] = Math.max(1, Math.floor(totalXP / 100) + 1);
+      fields[`${language}.lessonsCompleted`] = lessonsCompleted;
+      fields[`${language}.averageScore`] = Math.round(
+        (((stats.averageScore || 0) * (lessonsCompleted - 1)) + (statsSync.score ?? 0)) / lessonsCompleted
+      );
+      fields[`${language}.streak`] = await calculateStreak(progress);
+    }
+
+    const result = await UserStats.updateOne(
+      { userId, [versionField]: stats.lessonStatsVersion ?? { $exists: false } },
+      { $set: fields }
+    );
+    if (result.matchedCount) return xp;
+  }
+
+  throw new Error('Lesson stats changed during each write attempt');
+}
+
+export const updateLessonProgress = async (req: Request, res: Response): Promise<void> => {
+  const { lessonId } = req.params;
+  if (!isObjectIdOrHexString(lessonId)) {
+    res.status(400).json({ success: false, message: 'Invalid lesson ID' });
+    return;
+  }
+
+  const parsed = progressInput.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: 'Invalid lesson progress' });
+    return;
+  }
+
   try {
-    const { lessonId } = req.params;
-    const { currentStep, totalSteps, score, timeSpent, language, mistakes, completed } = req.body;
-
-    console.log('📝 Update progress request:', {
-      lessonId, currentStep, totalSteps, score, timeSpent, language, completed, userId: req.user?.userId
-    });
-
-    if (!language || !['spanish', 'japanese'].includes(language)) {
-      res.status(400).json({
-        success: false,
-        message: 'Valid language is required'
-      });
-      return;
-    }
-
-    if (!req.user?.userId) {
-      res.status(401).json({
-        success: false,
-        message: 'User authentication required'
-      });
-      return;
-    }
-
-    // Validate lesson exists
     const lesson = await Lesson.findById(lessonId);
     if (!lesson) {
-      res.status(404).json({
-        success: false,
-        message: 'Lesson not found'
-      });
+      res.status(404).json({ success: false, message: 'Lesson not found' });
       return;
     }
 
-    const actualTotalSteps = totalSteps || lesson.steps?.length || 5;
-    const actualCurrentStep = Math.max(0, Math.min(currentStep || 0, actualTotalSteps));
-    const actualScore = Math.max(0, Math.min(100, score || 0));
-    const actualTimeSpent = Math.max(0, timeSpent || 0); // FIXED: Ensure time is always positive
-
-    // Find existing progress
-    let progress = await Progress.findOne({
-      userId: req.user.userId,
-      lessonId: lessonId
-    });
-
-    const isFirstCompletion = !progress || !progress.xpAwarded;
-    const isCompletingNow = completed === true || (actualCurrentStep >= actualTotalSteps - 1 && actualScore > 0);
-
-    if (!progress) {
-      // Create new progress
-      progress = new Progress({
-        userId: req.user.userId,
-        lessonId: lessonId,
-        language: language,
-        currentStep: actualCurrentStep,
-        totalSteps: actualTotalSteps,
-        score: actualScore,
-        timeSpent: actualTimeSpent, // FIXED: Use validated time
-        attempts: 1,
-        mistakes: Array.isArray(mistakes) ? mistakes : [],
-        xpAwarded: false
-      });
-    } else {
-      // Update existing progress
-      progress.currentStep = Math.max(progress.currentStep, actualCurrentStep);
-      progress.totalSteps = actualTotalSteps;
-      progress.score = Math.max(progress.score, actualScore); // Keep best score
-      
-      // FIXED: Always add time spent, don't check if > 0
-      if (actualTimeSpent) {
-        progress.timeSpent += actualTimeSpent;
-      }
-      
-      if (mistakes && Array.isArray(mistakes)) {
-        const uniqueMistakes = [...new Set([...progress.mistakes, ...mistakes])];
-        progress.mistakes = uniqueMistakes;
-      }
-      
-      progress.attempts += 1;
-    }
-
-    await progress.save();
-    console.log('✅ Progress saved successfully');
-
-    // Award XP only once when lesson is completed for the first time
-    if (isCompletingNow && isFirstCompletion) {
-      console.log('🏆 Lesson completed for first time, awarding XP...');
-      
-      try {
-        // Mark XP as awarded to prevent duplicates
-        progress.xpAwarded = true;
-        await progress.save();
-
-        // Update UserStats with XP
-        await updateUserStatsWithXP(req.user.userId, language, lesson.xpReward || 50, actualTimeSpent, progress.score);
-        
-        console.log('✅ XP awarded successfully:', lesson.xpReward || 50);
-      } catch (statsError: any) {
-        console.error('⚠️ Stats update error:', statsError);
-      }
-    } else if (!isCompletingNow && actualTimeSpent > 0) {
-      // FIXED: Update time spent even if lesson not completed
-      try {
-        await updateTimeSpentOnly(req.user.userId, language, actualTimeSpent);
-        console.log('⏱️ Time updated:', actualTimeSpent);
-      } catch (timeError: any) {
-        console.error('⚠️ Time update error:', timeError);
-      }
+    const progress = await saveProgress(req.user!.userId, lesson, parsed.data);
+    let xpAwarded: number;
+    try {
+      xpAwarded = await syncLessonStats(progress);
+    } catch (error) {
+      console.error('Lesson stats sync error:', error);
+      res.status(503).json({ success: false, message: 'Progress saved. Update progress again to refresh lesson stats.' });
+      return;
     }
 
     res.json({
       success: true,
       message: 'Progress updated successfully',
-      progress: {
-        currentStep: progress.currentStep,
-        totalSteps: progress.totalSteps,
-        status: progress.status,
-        score: progress.score,
-        timeSpent: progress.timeSpent,
-        attempts: progress.attempts,
-        progress: progress.progress,
-        completed: progress.completed,
-        xpAwarded: isCompletingNow && isFirstCompletion ? lesson.xpReward || 50 : 0
-      }
+      progress: { ...progressDetails(progress), totalSteps: progress.totalSteps, attempts: progress.attempts, xpAwarded }
     });
-
-  } catch (error: any) {
-    console.error('❌ Update progress error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error updating progress',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+  } catch (error) {
+    console.error('Update progress error:', error);
+    res.status(500).json({ success: false, message: 'Error updating progress' });
   }
 };
 
-// FIXED: Helper function to update only time spent
-async function updateTimeSpentOnly(userId: string, language: string, timeSpent: number) {
-  let userStats = await UserStats.findOne({ userId });
-  
-  if (!userStats) {
-    userStats = new UserStats({
-      userId,
-      japanese: { level: 1, totalXP: 0, streak: 0, lessonsCompleted: 0, averageScore: 0, timeSpent: 0, weakAreas: [], strongAreas: [] },
-      spanish: { level: 1, totalXP: 0, streak: 0, lessonsCompleted: 0, averageScore: 0, timeSpent: 0, weakAreas: [], strongAreas: [] },
-      preferences: { dailyGoal: 15, reminderTime: '19:00', difficultyPreference: 'adaptive' }
-    });
+export const getUserDashboard = async (req: Request, res: Response): Promise<void> => {
+  const parsed = lessonLanguage.safeParse(req.params.language);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: invalidLanguage });
+    return;
   }
 
-  const langStats = userStats[language as keyof typeof userStats];
-  if (langStats && typeof langStats === 'object') {
-    langStats.timeSpent = (langStats.timeSpent || 0) + timeSpent;
-    await userStats.save();
-  }
-}
-
-// FIXED: Helper function to update user stats with proper level calculation and streak
-async function updateUserStatsWithXP(userId: string, language: string, xpReward: number, timeSpent: number, score: number) {
-  let userStats = await UserStats.findOne({ userId });
-  
-  if (!userStats) {
-    userStats = new UserStats({
-      userId,
-      japanese: { level: 1, totalXP: 0, streak: 0, lessonsCompleted: 0, averageScore: 0, timeSpent: 0, weakAreas: [], strongAreas: [] },
-      spanish: { level: 1, totalXP: 0, streak: 0, lessonsCompleted: 0, averageScore: 0, timeSpent: 0, weakAreas: [], strongAreas: [] },
-      preferences: { dailyGoal: 15, reminderTime: '19:00', difficultyPreference: 'adaptive' }
-    });
-  }
-
-  const langStats = userStats[language as keyof typeof userStats];
-  if (langStats && typeof langStats === 'object') {
-    // Award XP and update lesson count
-    langStats.totalXP = (langStats.totalXP || 0) + xpReward;
-    langStats.lessonsCompleted = (langStats.lessonsCompleted || 0) + 1;
-    langStats.timeSpent = (langStats.timeSpent || 0) + timeSpent;
-    
-    // FIXED: Proper average score calculation
-    const completedCount = langStats.lessonsCompleted;
-    if (completedCount === 1) {
-      langStats.averageScore = score;
-    } else {
-      const oldAvg = langStats.averageScore || 0;
-      langStats.averageScore = Math.round(((oldAvg * (completedCount - 1)) + score) / completedCount);
-    }
-    
-    // Level calculation
-    langStats.level = Math.max(1, Math.floor(langStats.totalXP / 100) + 1);
-
-    // FIXED: Day streak calculation
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    // Check completed lessons for today and yesterday
-    const completedToday = await Progress.countDocuments({
-      userId,
-      language,
-      status: { $in: ['completed', 'mastered'] },
-      completedAt: { 
-        $gte: today,
-        $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
-      }
-    });
-
-    const completedYesterday = await Progress.countDocuments({
-      userId,
-      language,
-      status: { $in: ['completed', 'mastered'] },
-      completedAt: { 
-        $gte: yesterday,
-        $lt: today
-      }
-    });
-
-    // Update streak only if this is the first lesson completed today
-    if (completedToday === 1) {
-      if (completedYesterday > 0) {
-        // Continue streak
-        langStats.streak = (langStats.streak || 0) + 1;
-      } else {
-        // Start new streak
-        langStats.streak = 1;
-      }
-    }
-
-    await userStats.save();
-    console.log('✅ User stats updated:', {
-      language,
-      totalXP: langStats.totalXP,
-      level: langStats.level,
-      lessonsCompleted: langStats.lessonsCompleted,
-      streak: langStats.streak,
-      averageScore: langStats.averageScore
-    });
-  }
-}
-
-// FIXED: Proper streak calculation function
-async function updateStreak(userId: string, language: string, langStats: any) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  // Check if user completed any lesson today
-  const completedToday = await Progress.countDocuments({
-    userId,
-    language,
-    status: { $in: ['completed', 'mastered'] },
-    completedAt: { 
-      $gte: today,
-      $lt: new Date(today.getTime() + 24 * 60 * 60 * 1000)
-    }
-  });
-
-  // Check if user completed any lesson yesterday
-  const completedYesterday = await Progress.countDocuments({
-    userId,
-    language,
-    status: { $in: ['completed', 'mastered'] },
-    completedAt: { 
-      $gte: yesterday,
-      $lt: today
-    }
-  });
-
-  if (completedToday === 1) { // First lesson completed today
-    if (completedYesterday > 0) {
-      // Continue streak
-      langStats.streak = (langStats.streak || 0) + 1;
-    } else {
-      // Start new streak
-      langStats.streak = 1;
-    }
-  }
-  // If this is not the first lesson today, don't change streak
-}
-
-// Get user dashboard with accurate data
-export const getUserDashboard = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { language } = req.params;
+    const language = parsed.data;
+    const userId = req.user!.userId;
+    const [userStats, recentProgress, totalLessons, completedLessons] = await Promise.all([
+      getOrCreateUserStats(userId),
+      Progress.find({ userId, language, status: { $ne: 'not_started' } })
+        .sort({ lastAccessed: -1 }).limit(5)
+        .populate<{ lessonId: Pick<ILesson, 'title' | 'difficulty'> | null }>('lessonId', 'title difficulty'),
+      Lesson.countDocuments({ language, isActive: true }),
+      Progress.countDocuments({ userId, language, status: { $in: completedStatuses } })
+    ]);
 
-    if (!['spanish', 'japanese'].includes(language)) {
-      res.status(400).json({ 
-        success: false, 
-        message: 'Invalid language. Must be "spanish" or "japanese"' 
-      });
-      return;
-    }
+    const stats = userStats[language];
+    const totalXP = stats.totalXP || 0;
+    const level = Math.max(1, Math.floor(totalXP / 100) + 1);
+    const xpForNextLevel = level * 100;
 
-    if (!req.user?.userId) {
-      res.status(401).json({
-        success: false,
-        message: 'User authentication required'
-      });
-      return;
-    }
-
-    console.log(`📊 Getting dashboard for language: ${language}, user: ${req.user.userId}`);
-
-    // Get or create user stats
-    let userStats = await UserStats.findOne({ userId: req.user.userId });
-    
-    if (!userStats) {
-      console.log('Creating new user stats...');
-      userStats = new UserStats({
-        userId: req.user.userId,
-        japanese: { level: 1, totalXP: 0, streak: 0, lessonsCompleted: 0, averageScore: 0, timeSpent: 0, weakAreas: [], strongAreas: [] },
-        spanish: { level: 1, totalXP: 0, streak: 0, lessonsCompleted: 0, averageScore: 0, timeSpent: 0, weakAreas: [], strongAreas: [] },
-        preferences: { dailyGoal: 15, reminderTime: '19:00', difficultyPreference: 'adaptive' }
-      });
-      await userStats.save();
-    }
-
-    const langStats = userStats[language as keyof typeof userStats];
-
-    // Get recent progress
-    const recentProgress = await Progress.find({
-      userId: req.user.userId,
-      language: language,
-      status: { $ne: 'not_started' }
-    })
-    .sort({ lastAccessed: -1 })
-    .limit(5)
-    .populate('lessonId', 'title difficulty');
-
-    // Get lesson counts
-    const totalLessons = await Lesson.countDocuments({ language, isActive: true });
-    const completedLessons = await Progress.countDocuments({
-      userId: req.user.userId,
-      language: language,
-      status: { $in: ['completed', 'mastered'] }
-    });
-
-    // FIXED: Build dashboard response with corrected level calculation
-    const currentLevel = langStats?.level || 1;
-    const currentXP = langStats?.totalXP || 0;
-    
-    // FIXED: Level calculation for display
-    const actualLevel = Math.max(1, Math.floor(currentXP / 100) + 1);
-    const xpForCurrentLevel = (actualLevel - 1) * 100;
-    const xpForNextLevel = actualLevel * 100;
-    const xpProgress = Math.max(0, currentXP - xpForCurrentLevel);
-    const xpNeededForNext = Math.max(0, xpForNextLevel - currentXP);
-
-    const dashboardResponse = {
+    res.json({
       success: true,
       dashboard: {
-        language: language,
-        level: actualLevel, // FIXED: Use recalculated level
-        totalXP: currentXP,
-        xpForNextLevel: xpForNextLevel,
-        xpProgress: xpProgress,
-        xpNeededForNext: xpNeededForNext,
-        currentStreak: langStats?.streak || 0,
-        completedLessons: completedLessons,
-        totalLessons: totalLessons,
-        timeSpent: Math.round((langStats?.timeSpent || 0) / 60), // FIXED: Convert to minutes and round
-        averageScore: langStats?.averageScore || 0,
+        language,
+        level,
+        totalXP,
+        xpForNextLevel,
+        xpProgress: Math.max(0, totalXP - (level - 1) * 100),
+        xpNeededForNext: Math.max(0, xpForNextLevel - totalXP),
+        currentStreak: stats.streak || 0,
+        completedLessons,
+        totalLessons,
+        timeSpent: Math.round((stats.timeSpent || 0) / 60),
+        averageScore: stats.averageScore || 0,
         dailyGoal: userStats.preferences?.dailyGoal || 15,
-        recentLessons: recentProgress.map(p => ({
-          title: (p.lessonId as any)?.title || 'Lesson',
-          difficulty: (p.lessonId as any)?.difficulty || 'Beginner',
-          timeSpent: Math.round((p.timeSpent || 0) / 60), // FIXED: Convert to minutes
-          progress: p.progress || 0,
-          completed: p.completed || false,
-          score: p.score || 0
+        recentLessons: recentProgress.map(progress => ({
+          title: progress.lessonId?.title || 'Lesson',
+          difficulty: progress.lessonId?.difficulty || 'Beginner',
+          timeSpent: Math.round((progress.timeSpent || 0) / 60),
+          progress: progress.progress || 0,
+          completed: progress.completed || false,
+          score: progress.score || 0
         }))
       }
-    };
-
-    console.log('✅ Dashboard response prepared for user:', req.user.userId);
-    res.json(dashboardResponse);
-    
-  } catch (error: any) {
-    console.error('❌ Dashboard error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error fetching dashboard',
-      error: error.message
     });
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching dashboard' });
   }
 };
 
-// ✅ FIXED: Generate lesson content controller
 export const generateLessonContentController = async (req: Request, res: Response): Promise<void> => {
+  const parsed = generationInput.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: 'Invalid lesson generation request' });
+    return;
+  }
+
+  if (!process.env.GEMINI_API_KEY?.trim()) {
+    res.status(503).json({ success: false, message: 'Lesson generation is unavailable' });
+    return;
+  }
+
   try {
-    const { language, topic, difficulty, lessonType, generateAudio } = req.body;
-
-    console.log('🎯 Lesson generation request:', { language, topic, difficulty, lessonType });
-
-    // Validate required parameters
-    if (!language || !['spanish', 'japanese'].includes(language)) {
-      res.status(400).json({ 
-        success: false, 
-        message: 'Valid language is required. Must be "spanish" or "japanese"' 
-      });
-      return;
-    }
-
-    if (!topic || topic.trim().length === 0) {
-      res.status(400).json({
-        success: false,
-        message: 'Topic is required'
-      });
-      return;
-    }
-
-    if (!difficulty || !['Beginner', 'Intermediate', 'Advanced'].includes(difficulty)) {
-      res.status(400).json({
-        success: false,
-        message: 'Valid difficulty is required. Must be "Beginner", "Intermediate", or "Advanced"'
-      });
-      return;
-    }
-
-    // Generate lesson content using the fixed AI service
-    console.log('🤖 Calling AI service...');
-    const lessonData = await generateLessonContent({
-      language: language as 'spanish' | 'japanese',
-      lessonType: lessonType || 'practice',
-      difficulty,
-      topic: topic.trim(),
-      generateAudio: generateAudio || false
+    const { title, description, estimatedMinutes, steps, culturalNotes } = await generateLessonContent(parsed.data);
+    const { language, difficulty } = parsed.data;
+    const level = difficulty === 'Beginner' ? 1 : difficulty === 'Intermediate' ? 2 : 3;
+    const lesson = await Lesson.create({
+      title, description, estimatedMinutes, steps, culturalNotes, language, difficulty, level
     });
-
-    console.log('✅ AI generation successful, creating lesson...');
-
-    // Create and save the lesson
-    const lesson = new Lesson(lessonData);
-    await lesson.save();
-
-    console.log('✅ Lesson saved to database with ID:', lesson._id);
-
     res.status(201).json({
       success: true,
       message: 'Lesson content generated successfully',
-      lesson: lesson,
+      lesson,
       debug: {
         aiGenerated: true,
-        stepsGenerated: lessonData.steps?.length || 0,
-        hasRealContent: lessonData.steps?.some((step: any) => 
-          step.content && 
-          step.content.word !== 'Example' && 
-          step.content.phrase !== 'Example phrase'
-        ) || false
+        stepsGenerated: lesson.steps.length,
+        hasRealContent: lesson.steps.some(step =>
+          step.content && step.content.word !== 'Example' && step.content.phrase !== 'Example phrase'
+        )
       }
     });
-
-  } catch (error: any) {
-    console.error('❌ Lesson generation failed:', error);
-    
-    // Don't use fallback - let it fail properly so we can debug
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to generate lesson content',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
-      debug: {
-        timestamp: new Date().toISOString(),
-        endpoint: 'generateLessonContent'
-      }
-    });
+  } catch (error) {
+    console.error('Lesson generation failed:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate lesson content' });
   }
 };

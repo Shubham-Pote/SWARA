@@ -1,0 +1,12 @@
+# Local Playwright and Taste output, including screenshots and reports
+/.agents/MCP/.playwright-mcp/
+
+# Local configuration. Track only the sample files.
+.env
+.env.*
+!.env.example
+
+# Local build and editor files
+*.tsbuildinfo
+coverage/
+.DS_Store

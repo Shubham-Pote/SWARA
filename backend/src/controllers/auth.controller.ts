@@ -1,212 +1,153 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import User from '../models/user';
-import UserStats from '../models/userStats';
+import { mongo } from 'mongoose';
+import { z } from 'zod';
+import { getJwtSecret } from '../config/auth';
+import User, { IUser } from '../models/user';
+import UserStats, { getOrCreateUserStats, IUserStats } from '../models/userStats';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const credentialsSchema = z.object({
+  email: z.string().trim().min(1, 'Email and password are required').toLowerCase(),
+  password: z.string().min(1, 'Email and password are required')
+});
 
-interface AuthRequest extends Request {
-  user?: { userId: string };
+const registrationSchema = credentialsSchema.extend({
+  email: credentialsSchema.shape.email.email('Enter a valid email address'),
+  password: z.string().min(6, 'Password must be at least 6 characters long')
+    .refine(password => Buffer.byteLength(password, 'utf8') <= 72, 'Password must be at most 72 bytes'),
+  displayName: z.string().trim().min(2, 'Display name must be at least 2 characters long'),
+  currentLanguage: z.enum(['spanish', 'japanese']).default('spanish')
+});
+
+const profileSchema = z.object({
+  displayName: z.string().max(100).trim().min(1).optional(),
+  bio: z.string().max(500).trim().optional(),
+  location: z.string().max(100).trim().optional(),
+  avatarUrl: z.string().trim().optional()
+});
+
+const preferencesSchema = z.object({
+  dailyGoal: z.number().finite().positive().default(15),
+  reminderTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).default('19:00'),
+  difficultyPreference: z.enum(['adaptive', 'challenging', 'comfortable']).default('adaptive')
+});
+
+type ProfileStats = Pick<IUserStats['spanish'],
+  'level' | 'totalXP' | 'streak' | 'lessonsCompleted' | 'timeSpent' | 'averageScore'
+>;
+
+function sessionFor(user: IUser, secret: string) {
+  return {
+    token: jwt.sign({ userId: user._id.toString() }, secret, { expiresIn: '24h' }),
+    user: {
+      id: user._id,
+      email: user.email,
+      displayName: user.displayName,
+      level: user.level,
+      currentLanguage: user.currentLanguage
+    }
+  };
 }
 
-const createDefaultUserStats = (userId: string) => {
-  return new UserStats({
-    userId,
-    japanese: {
-      level: 1, totalXP: 0, streak: 0, lessonsCompleted: 0,
-      averageScore: 0, timeSpent: 0, weakAreas: [], strongAreas: []
-    },
-    spanish: {
-      level: 1, totalXP: 0, streak: 0, lessonsCompleted: 0,
-      averageScore: 0, timeSpent: 0, weakAreas: [], strongAreas: []
-    },
-    preferences: {
-      dailyGoal: 15, reminderTime: '19:00', difficultyPreference: 'adaptive'
-    }
-  });
-};
-
-// Register
 export const register = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { email, password, displayName } = req.body;
+  const parsed = registrationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    res.status(400).json({
+      success: false,
+      message: issue.code === 'invalid_type'
+        ? 'Email, password, and display name are required'
+        : issue.message
+    });
+    return;
+  }
 
-        // ✅ FIXED: Better validation
-        if (!email || !password || !displayName) {
-            res.status(400).json({ 
-                success: false, 
-                message: 'Email, password, and display name are required' 
-            });
-            return;
-        }
+  const secret = getJwtSecret();
+  if (!secret) {
+    res.status(503).json({ success: false, message: 'Authentication is unavailable' });
+    return;
+  }
 
-        // ✅ FIXED: Trim and validate displayName
-        const trimmedDisplayName = displayName.trim();
-        if (trimmedDisplayName.length < 2) {
-            res.status(400).json({ 
-                success: false, 
-                message: 'Display name must be at least 2 characters long' 
-            });
-            return;
-        }
-
-        const existingUser = await User.findOne({ email: email.toLowerCase() });
-        if (existingUser) {
-            res.status(400).json({ 
-                success: false, 
-                message: 'User with this email already exists' 
-            });
-            return;
-        }
-
-        // ✅ FIXED: Create user with proper field mapping
-        const user = new User({
-            email: email.toLowerCase(),
-            password,
-            displayName: trimmedDisplayName,
-            currentLanguage: 'spanish'
-        });
-
-        await user.save();
-
-        const userStats = createDefaultUserStats(user._id);
-        await userStats.save();
-
-        const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '24h' });
-
-        res.status(201).json({
-            success: true,
-            message: 'User registered successfully',
-            token,
-            user: {
-                id: user._id,
-                email: user.email,
-                displayName: user.displayName,
-                level: user.level,
-                currentLanguage: user.currentLanguage
-            }
-        });
-    } catch (error: any) {
-        console.error('Registration error:', error);
-        
-        // ✅ FIXED: Handle specific MongoDB errors
-        if (error.code === 11000) {
-            const field = Object.keys(error.keyValue)[0];
-            res.status(400).json({ 
-                success: false, 
-                message: `${field} already exists` 
-            });
-            return;
-        }
-        
-        res.status(500).json({ 
-            success: false, 
-            message: 'Error creating user',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
-
-// Login
-export const login = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { email, password } = req.body;
-
-        if (!email || !password) {
-            res.status(400).json({ 
-                success: false, 
-                message: 'Email and password are required' 
-            });
-            return;
-        }
-
-        const user = await User.findOne({ email: email.toLowerCase() });
-        if (!user) {
-            res.status(401).json({ 
-                success: false, 
-                message: 'Invalid credentials' 
-            });
-            return;
-        }
-
-        const isMatch = await user.comparePassword(password);
-        if (!isMatch) {
-            res.status(401).json({ 
-                success: false, 
-                message: 'Invalid credentials' 
-            });
-            return;
-        }
-
-        const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '24h' });
-
-        res.json({
-            success: true,
-            token,
-            user: {
-                id: user._id,
-                email: user.email,
-                displayName: user.displayName,
-                level: user.level,
-                currentLanguage: user.currentLanguage
-            }
-        });
-    } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Error logging in' 
-        });
-    }
-};
-
-// Get Profile
-export const getProfile = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    if (!req.user?.userId) {
-      res.status(401).json({
-        success: false,
-        message: 'User authentication required'
-      });
+    if (await User.exists({ email: parsed.data.email })) {
+      res.status(400).json({ success: false, message: 'User with this email already exists' });
       return;
     }
 
-    const user = await User.findById(req.user.userId).select('-password');
-    
+    const user = await User.create(parsed.data);
+    try {
+      await getOrCreateUserStats(user._id);
+    } catch (error) {
+      console.error('Registration stats initialization error:', error);
+      res.status(503).json({ success: false, message: 'Account created. Sign in to finish setup.' });
+      return;
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'User registered successfully',
+      ...sessionFor(user, secret)
+    });
+  } catch (error) {
+    if (error instanceof mongo.MongoServerError && error.code === 11000 && error.keyPattern?.email) {
+      res.status(400).json({ success: false, message: 'User with this email already exists' });
+      return;
+    }
+    console.error('Registration error:', error);
+    res.status(500).json({ success: false, message: 'Error creating user' });
+  }
+};
+
+export const login = async (req: Request, res: Response): Promise<void> => {
+  const parsed = credentialsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: 'Email and password are required' });
+    return;
+  }
+
+  const secret = getJwtSecret();
+  if (!secret) {
+    res.status(503).json({ success: false, message: 'Authentication is unavailable' });
+    return;
+  }
+
+  try {
+    const { email, password } = parsed.data;
+    const user = await User.findOne({ email }).select('+password');
+    if (!user || !(await user.comparePassword(password))) {
+      res.status(401).json({ success: false, message: 'Invalid credentials' });
+      return;
+    }
+
+    await getOrCreateUserStats(user._id);
+    res.json({ success: true, ...sessionFor(user, secret) });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ success: false, message: 'Error logging in' });
+  }
+};
+
+export const getProfile = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.userId;
+    const user = await User.findById(userId);
+
     if (!user) {
-      res.status(404).json({ 
-        success: false, 
-        message: 'User not found' 
-      });
+      res.status(404).json({ success: false, message: 'User not found' });
       return;
     }
 
-    const userStats = await UserStats.findOne({ userId: req.user.userId });
-    
-    let aggregatedStats = {
-      level: 1,
-      totalXP: 0,
-      streak: 0,
-      lessonsCompleted: 0,
-      timeSpent: 0,
-      averageScore: 0
+    const userStats = await UserStats.findOne({ userId });
+    const language = user.currentLanguage;
+    const stats = language === 'spanish' || language === 'japanese' ? userStats?.[language] : undefined;
+    const profileStats: ProfileStats = {
+      level: stats?.level || 1,
+      totalXP: stats?.totalXP || 0,
+      streak: stats?.streak || 0,
+      lessonsCompleted: stats?.lessonsCompleted || 0,
+      timeSpent: Math.round((stats?.timeSpent || 0) / 60),
+      averageScore: stats?.averageScore || 0
     };
-
-    if (userStats && user.currentLanguage) {
-      const currentLangStats = userStats[user.currentLanguage as keyof typeof userStats];
-      if (currentLangStats && typeof currentLangStats === 'object') {
-        aggregatedStats = {
-          level: currentLangStats.level || 1,
-          totalXP: currentLangStats.totalXP || 0,
-          streak: currentLangStats.streak || 0,
-          lessonsCompleted: currentLangStats.lessonsCompleted || 0,
-          timeSpent: Math.round((currentLangStats.timeSpent || 0) / 60),
-          averageScore: currentLangStats.averageScore || 0
-        };
-      }
-    }
-
-    const achievements = await calculateAchievements(req.user.userId, aggregatedStats);
 
     res.json({
       success: true,
@@ -220,73 +161,31 @@ export const getProfile = async (req: AuthRequest, res: Response): Promise<void>
         currentLanguage: user.currentLanguage,
         joinDate: user.joinDate || user.createdAt
       },
-      stats: aggregatedStats,
-      achievements: achievements
+      stats: profileStats,
+      achievements: calculateAchievements(profileStats)
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Profile fetch error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error fetching profile',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error fetching profile' });
   }
 };
 
-// Update Profile
-export const updateProfile = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updateProfile = async (req: Request, res: Response): Promise<void> => {
+  const parsed = profileSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: 'Invalid profile fields' });
+    return;
+  }
+
   try {
-    const { displayName, bio, location, avatarUrl } = req.body;
-
-    if (!req.user?.userId) {
-      res.status(401).json({
-        success: false,
-        message: 'User authentication required'
-      });
-      return;
-    }
-
-    if (displayName && displayName.length > 100) {
-      res.status(400).json({
-        success: false,
-        message: 'Display name must be less than 100 characters'
-      });
-      return;
-    }
-
-    if (bio && bio.length > 500) {
-      res.status(400).json({
-        success: false,
-        message: 'Bio must be less than 500 characters'
-      });
-      return;
-    }
-
-    if (location && location.length > 100) {
-      res.status(400).json({
-        success: false,
-        message: 'Location must be less than 100 characters'
-      });
-      return;
-    }
-
-    const updateData: any = {};
-    if (displayName !== undefined) updateData.displayName = displayName.trim();
-    if (bio !== undefined) updateData.bio = bio.trim();
-    if (location !== undefined) updateData.location = location.trim();
-    if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl.trim();
-
     const updatedUser = await User.findByIdAndUpdate(
-      req.user.userId,
-      { $set: updateData },
+      req.user!.userId,
+      { $set: parsed.data },
       { new: true, runValidators: true }
-    ).select('-password');
+    );
 
     if (!updatedUser) {
-      res.status(404).json({
-        success: false,
-        message: 'User not found'
-      });
+      res.status(404).json({ success: false, message: 'User not found' });
       return;
     }
 
@@ -304,17 +203,13 @@ export const updateProfile = async (req: AuthRequest, res: Response): Promise<vo
         joinDate: updatedUser.joinDate
       }
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Profile update error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error updating profile',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Error updating profile' });
   }
 };
 
-async function calculateAchievements(userId: string, stats: any) {
+function calculateAchievements(stats: ProfileStats) {
   const achievements = [];
 
   if (stats.lessonsCompleted >= 1) {
@@ -404,127 +299,108 @@ async function calculateAchievements(userId: string, stats: any) {
   return achievements;
 }
 
-// Set Language
-export const setActiveLanguage = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        const { language } = req.body;
-        
-        if (!['spanish', 'japanese'].includes(language)) {
-            res.status(400).json({ 
-                success: false, 
-                message: 'Invalid language. Must be "spanish" or "japanese"' 
-            });
-            return;
-        }
+export const setActiveLanguage = async (req: Request, res: Response): Promise<void> => {
+  const language = req.body?.language;
+  if (language !== 'spanish' && language !== 'japanese') {
+    res.status(400).json({
+      success: false,
+      message: 'Invalid language. Must be "spanish" or "japanese"'
+    });
+    return;
+  }
 
-        const updatedUser = await User.findByIdAndUpdate(
-            req.user!.userId, 
-            { currentLanguage: language },
-            { new: true }
-        ).select('-password');
+  try {
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user!.userId,
+      { currentLanguage: language },
+      { new: true }
+    );
 
-        if (!updatedUser) {
-            res.status(404).json({ 
-                success: false, 
-                message: 'User not found' 
-            });
-            return;
-        }
-
-        res.json({
-            success: true,
-            message: 'Language preference updated successfully',
-            currentLanguage: language,
-            user: {
-                id: updatedUser._id,
-                displayName: updatedUser.displayName,
-                currentLanguage: updatedUser.currentLanguage
-            }
-        });
-    } catch (error) {
-        console.error('Language update error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Error updating language preference' 
-        });
+    if (!updatedUser) {
+      res.status(404).json({ success: false, message: 'User not found' });
+      return;
     }
+
+    res.json({
+      success: true,
+      message: 'Language preference updated successfully',
+      currentLanguage: language,
+      user: {
+        id: updatedUser._id,
+        displayName: updatedUser.displayName,
+        currentLanguage: updatedUser.currentLanguage
+      }
+    });
+  } catch (error) {
+    console.error('Language update error:', error);
+    res.status(500).json({ success: false, message: 'Error updating language preference' });
+  }
 };
 
-// Get Language Stats
-export const getUserLanguageStats = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        let userStats = await UserStats.findOne({ userId: req.user!.userId });
-        
-        if (!userStats) {
-            userStats = createDefaultUserStats(req.user!.userId);
-            await userStats.save();
-        }
-        
-        const currentUser = await User.findById(req.user!.userId);
-        
-        res.json({
-            success: true,
-            languages: {
-                japanese: {
-                    level: userStats.japanese.level,
-                    totalXP: userStats.japanese.totalXP,
-                    streak: userStats.japanese.streak,
-                    lessonsCompleted: userStats.japanese.lessonsCompleted,
-                    averageScore: userStats.japanese.averageScore,
-                    timeSpent: userStats.japanese.timeSpent,
-                    weakAreas: userStats.japanese.weakAreas,
-                    strongAreas: userStats.japanese.strongAreas
-                },
-                spanish: {
-                    level: userStats.spanish.level,
-                    totalXP: userStats.spanish.totalXP,
-                    streak: userStats.spanish.streak,
-                    lessonsCompleted: userStats.spanish.lessonsCompleted,
-                    averageScore: userStats.spanish.averageScore,
-                    timeSpent: userStats.spanish.timeSpent,
-                    weakAreas: userStats.spanish.weakAreas,
-                    strongAreas: userStats.spanish.strongAreas
-                }
-            },
-            preferences: userStats.preferences,
-            currentLanguage: currentUser?.currentLanguage || 'spanish'
-        });
-    } catch (error) {
-        console.error('Language stats fetch error:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Error fetching language statistics' 
-        });
+function publicLanguageStats(stats: IUserStats['spanish']) {
+  const { level, totalXP, streak, lessonsCompleted, averageScore, timeSpent, weakAreas, strongAreas } = stats;
+  return { level, totalXP, streak, lessonsCompleted, averageScore, timeSpent, weakAreas, strongAreas };
+}
+
+export const getUserLanguageStats = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.userId;
+    const currentUser = await User.findById(userId).select('currentLanguage');
+    if (!currentUser) {
+      res.status(404).json({ success: false, message: 'User not found' });
+      return;
     }
+
+    const userStats = await getOrCreateUserStats(userId);
+    res.json({
+      success: true,
+      languages: {
+        japanese: publicLanguageStats(userStats.japanese),
+        spanish: publicLanguageStats(userStats.spanish)
+      },
+      preferences: userStats.preferences,
+      currentLanguage: currentUser.currentLanguage || 'spanish'
+    });
+  } catch (error) {
+    console.error('Language stats fetch error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching language statistics' });
+  }
 };
 
-// Update Preferences
-export const updateUserPreferences = async (req: AuthRequest, res: Response): Promise<void> => {
-    try {
-        const { dailyGoal, reminderTime, difficultyPreference } = req.body;
+export const updateUserPreferences = async (req: Request, res: Response): Promise<void> => {
+  const parsed = preferencesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: 'Invalid preferences' });
+    return;
+  }
 
-        const userStats = await UserStats.findOneAndUpdate(
-            { userId: req.user!.userId },
-            {
-                $set: {
-                    'preferences.dailyGoal': dailyGoal || 15,
-                    'preferences.reminderTime': reminderTime || '19:00',
-                    'preferences.difficultyPreference': difficultyPreference || 'adaptive'
-                }
-            },
-            { new: true, upsert: true }
-        );
-
-        res.json({
-            success: true,
-            message: 'Preferences updated successfully',
-            preferences: userStats.preferences
-        });
-    } catch (error) {
-        console.error('Preferences update error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Error updating preferences'
-        });
+  try {
+    const userId = req.user!.userId;
+    if (!(await User.exists({ _id: userId }))) {
+      res.status(404).json({ success: false, message: 'User not found' });
+      return;
     }
+
+    const { dailyGoal, reminderTime, difficultyPreference } = parsed.data;
+    const userStats = await UserStats.findOneAndUpdate(
+      { userId },
+      {
+        $set: {
+          'preferences.dailyGoal': dailyGoal,
+          'preferences.reminderTime': reminderTime,
+          'preferences.difficultyPreference': difficultyPreference
+        }
+      },
+      { new: true, upsert: true }
+    );
+
+    res.json({
+      success: true,
+      message: 'Preferences updated successfully',
+      preferences: userStats.preferences
+    });
+  } catch (error) {
+    console.error('Preferences update error:', error);
+    res.status(500).json({ success: false, message: 'Error updating preferences' });
+  }
 };

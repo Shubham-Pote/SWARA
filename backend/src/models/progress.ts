@@ -6,6 +6,7 @@ export interface IProgress extends mongoose.Document {
   language: 'japanese' | 'spanish';
   status: 'not_started' | 'in_progress' | 'completed' | 'mastered';
   currentStep: number;
+  lastSubmittedStep?: number;
   totalSteps: number;
   score: number;
   timeSpent: number;
@@ -13,7 +14,12 @@ export interface IProgress extends mongoose.Document {
   mistakes: string[];
   lastAccessed: Date;
   completedAt?: Date;
-  xpAwarded: boolean; // NEW: Track if XP has been awarded
+  xpAwarded: boolean;
+  statsSync: {
+    timeSpent: number;
+    xpReward?: number;
+    score?: number;
+  };
   createdAt?: Date;
   updatedAt?: Date;
   
@@ -47,6 +53,7 @@ const progressSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  lastSubmittedStep: Number,
   totalSteps: {
     type: Number,
     default: 5,
@@ -79,17 +86,24 @@ const progressSchema = new mongoose.Schema({
   completedAt: {
     type: Date
   },
-  xpAwarded: { // NEW: Prevent duplicate XP awards
+  xpAwarded: {
     type: Boolean,
     default: false
+  },
+  statsSync: {
+    timeSpent: { type: Number, default: 0 },
+    xpReward: Number,
+    score: Number
   }
-}, { 
-  timestamps: true 
+}, {
+  timestamps: true,
+  optimisticConcurrency: true
 });
 
 // Virtual for progress percentage
 progressSchema.virtual('progress').get(function() {
-  return this.totalSteps > 0 ? Math.round((this.currentStep / this.totalSteps) * 100) : 0;
+  if (this.status === 'completed' || this.status === 'mastered') return 100;
+  return this.totalSteps > 0 ? Math.min(100, Math.round((this.currentStep / this.totalSteps) * 100)) : 0;
 });
 
 // Virtual for completed status
@@ -103,23 +117,5 @@ progressSchema.set('toObject', { virtuals: true });
 // Compound indexes
 progressSchema.index({ userId: 1, lessonId: 1 }, { unique: true });
 progressSchema.index({ userId: 1, language: 1 });
-
-// Pre-save middleware
-progressSchema.pre('save', function(next) {
-  const wasCompleted = this.status === 'completed' || this.status === 'mastered';
-  
-  // Update status based on progress
-  if (this.currentStep >= this.totalSteps - 1 && this.score > 0) {
-    this.status = this.score >= 90 ? 'mastered' : 'completed';
-    if (!this.completedAt) {
-      this.completedAt = new Date();
-    }
-  } else if (this.currentStep > 0) {
-    this.status = 'in_progress';
-  }
-  
-  this.lastAccessed = new Date();
-  next();
-});
 
 export default mongoose.model<IProgress>('Progress', progressSchema);

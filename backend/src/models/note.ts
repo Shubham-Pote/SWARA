@@ -1,20 +1,34 @@
 import mongoose from 'mongoose';
 
+export const NOTE_LANGUAGES = ['spanish', 'japanese'] as const;
+export const NOTE_TOPICS = ['Grammar', 'Vocabulary', 'Culture', 'Pronunciation', 'Beginner', 'Intermediate', 'Advanced'] as const;
+export const NOTE_TITLE_MAX_LENGTH = 200;
+export const NOTE_CONTENT_MAX_LENGTH = 10000;
+
 export interface INote extends mongoose.Document {
   userId: mongoose.Types.ObjectId;
   title: string;
+  derivedTitle?: boolean;
+  readingId?: mongoose.Types.ObjectId;
+  revision?: number;
+  writeId?: string;
   content: string;
-  language: 'spanish' | 'japanese';
-  topic: string;
+  language: typeof NOTE_LANGUAGES[number];
+  topic?: typeof NOTE_TOPICS[number];
   tags: string[];
   aiGenerated: boolean;
   lessonId?: mongoose.Types.ObjectId;
+  summaryKey?: string;
   starred: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
 const noteSchema = new mongoose.Schema({
+  derivedTitle: Boolean,
+  readingId: { type: mongoose.Schema.Types.ObjectId, ref: 'ReadingArticle' },
+  revision: Number,
+  writeId: String,
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -24,23 +38,22 @@ const noteSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true,
-    maxlength: 200
+    maxlength: NOTE_TITLE_MAX_LENGTH
   },
   content: {
     type: String,
-    required: true,
-    maxlength: 10000
+    default: '',
+    maxlength: NOTE_CONTENT_MAX_LENGTH
   },
   language: {
     type: String,
-    enum: ['spanish', 'japanese'],
+    enum: NOTE_LANGUAGES,
     required: true
   },
   topic: {
     type: String,
-    required: true,
     trim: true,
-    enum: ['Grammar', 'Vocabulary', 'Culture', 'Pronunciation', 'Beginner', 'Intermediate', 'Advanced']
+    enum: NOTE_TOPICS
   },
   tags: [{
     type: String,
@@ -54,6 +67,10 @@ const noteSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Lesson'
   },
+  summaryKey: {
+    type: String,
+    select: false
+  },
   starred: {
     type: Boolean,
     default: false
@@ -66,5 +83,7 @@ noteSchema.index({ userId: 1, language: 1 });
 noteSchema.index({ userId: 1, starred: 1 });
 noteSchema.index({ userId: 1, topic: 1 });
 noteSchema.index({ userId: 1, createdAt: -1 });
+// Only new summaries have a key, so building the index preserves any legacy duplicates.
+noteSchema.index({ summaryKey: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model<INote>('Note', noteSchema);

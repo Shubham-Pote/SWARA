@@ -1,585 +1,377 @@
 import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import ReadingArticle from '../models/readingArticle';
-import ReadingProgress from '../models/readingProgress';
-import { AIArticleService } from '../services/aiArticleGeneration.service';
+import { isObjectIdOrHexString, Types } from 'mongoose';
+import { z } from 'zod';
+import ReadingArticle, { IReadingArticle, READING_LANGUAGES } from '../models/readingArticle';
+import ReadingProgress, { IReadingProgress } from '../models/readingProgress';
 import UserStats from '../models/userStats';
+import { generateReadingArticle } from '../services/aiArticleGeneration.service';
+import { countConsecutiveCompletionDays } from '../utils/completionStreak';
 
-interface AuthRequest extends Request {
-  user?: { userId: string; level?: number; currentLanguage?: string };
+type ReadingLanguage = IReadingArticle['language'];
+const readingLanguage = z.enum(READING_LANGUAGES);
+const openStatuses = ['not_started', 'reading'];
+const passingScore = 70;
+const quizInput = z.object({
+  answers: z.array(z.number().int().nonnegative()),
+  timeSpent: z.number().finite().nonnegative().default(0)
+});
+
+function visibleArticles(userId: string) {
+  return { $or: [{ generatedFor: userId }, { generatedFor: null }] };
 }
 
-// Get all articles for user (completed + current)
-export const getUserArticles = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { language } = req.params;
-    const userId = req.user?.userId;
-
-    if (!userId) {
-      res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-      return;
-    }
-
-    // Get all user's progress for this language
-    const allProgress = await ReadingProgress.find({
-      userId,
-      language
-    })
-    .populate('articleId')
-    .sort({ createdAt: -1 }); // Newest first
-
-    // Separate completed and current articles
-    const completedArticles = allProgress.filter(p => p.status === 'completed');
-    const currentArticle = allProgress.find(p => p.status === 'not_started' || p.status === 'reading');
-
-    res.json({
-      success: true,
-      currentArticle: currentArticle ? {
-        article: currentArticle.articleId,
-        progress: {
-          status: currentArticle.status,
-          timeSpent: currentArticle.timeSpent,
-          startedAt: currentArticle.startedAt,
-          quizScore: currentArticle.quizScore
-        }
-      } : null,
-      completedArticles: completedArticles.map(p => ({
-        article: p.articleId,
-        progress: {
-          status: p.status,
-          timeSpent: p.timeSpent,
-          completedAt: p.completedAt,
-          quizScore: p.quizScore,
-          quizAttempts: p.quizAttempts
-        }
-      })),
-      totalCompleted: completedArticles.length
+function articleProgressWithDetails(userId: string, language: ReadingLanguage, currentOnly = false) {
+  return ReadingProgress.find({
+    userId,
+    language,
+    ...(currentOnly && { status: { $in: openStatuses } })
+  })
+    .sort({ createdAt: -1, _id: -1 })
+    .populate<{ articleId: IReadingArticle | null }>({
+      path: 'articleId', match: visibleArticles(userId)
     });
+}
 
-  } catch (error: any) {
-    console.error('❌ Get user articles error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get articles',
-      error: error.message
-    });
+function readingProgressDetails({ status, timeSpent, startedAt }: Pick<IReadingProgress, 'status' | 'timeSpent' | 'startedAt'>) {
+  return { status, timeSpent, startedAt };
+}
+
+export const getUserArticles = async (req: Request, res: Response): Promise<void> => {
+  const language = readingLanguage.safeParse(req.params.language);
+  if (!language.success) {
+    res.status(400).json({ success: false, message: 'Invalid reading language' });
+    return;
   }
-};
 
-// Get specific article by ID (for review)
-export const getArticleById = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { articleId } = req.params;
-    const userId = req.user?.userId;
-
-    if (!userId) {
-      res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-      return;
-    }
-
-    const article = await ReadingArticle.findById(articleId);
-    const progress = await ReadingProgress.findOne({
-      userId,
-      articleId
-    });
-
-    if (!article) {
-      res.status(404).json({
-        success: false,
-        message: 'Article not found'
-      });
-      return;
-    }
-
-    res.json({
-      success: true,
-      article,
-      progress
-    });
-
-  } catch (error: any) {
-    console.error('❌ Get article by ID error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get article'
-    });
-  }
-};
-
-// Get current article for user (starter or next)
-export const getCurrentArticle = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { language } = req.params;
-    const userId = req.user?.userId;
-
-    if (!userId) {
-      res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-      return;
-    }
-
-    // Check if user has any article in progress
-    const currentProgress = await ReadingProgress.findOne({
-      userId,
-      language,
-      status: { $in: ['not_started', 'reading'] }
-    }).populate('articleId');
-
-    if (currentProgress && currentProgress.articleId) {
-      res.json({
-        success: true,
-        article: currentProgress.articleId,
-        progress: {
-          status: currentProgress.status,
-          timeSpent: currentProgress.timeSpent,
-          startedAt: currentProgress.startedAt
-        },
-        isNew: false
-      });
-      return;
-    }
-
-    // Check if user needs a starter article
-    const completedCount = await ReadingProgress.countDocuments({
-      userId,
-      language,
-      status: 'completed'
-    });
-
-    let article;
-    
-    if (completedCount === 0) {
-      // Generate starter article
-      console.log(`🌟 Generating starter article for new user: ${userId}`);
-      const starterData = await AIArticleService.generateStarterArticle(language as 'spanish' | 'japanese');
-      
-      article = new ReadingArticle({
-        ...starterData,
-        generatedFor: userId,
-        isStarterArticle: true,
-        generationMetadata: {
-          aiGenerated: true,
-          generatedAt: new Date(),
-          userLevel: req.user?.level || 1,
-          completedArticles: 0
-        }
-      });
-    } else {
-      // Generate next personalized article
-      console.log(`🎯 Generating personalized article for user: ${userId}, completed: ${completedCount}`);
-      
-      const lastArticle = await ReadingProgress.findOne({
-        userId,
-        language,
-        status: 'completed'
-      }).sort({ completedAt: -1 }).populate('articleId');
-
-      const personalizedData = await AIArticleService.generatePersonalizedArticle({
-        language: language as 'spanish' | 'japanese',
-        userLevel: req.user?.level || 1,
-        completedArticles: completedCount,
-        lastTopic: (lastArticle?.articleId as any)?.topic,
-        preferredContentType: undefined
-      });
-      
-      article = new ReadingArticle({
-        ...personalizedData,
-        generatedFor: userId,
-        isStarterArticle: false,
-        generationMetadata: {
-          aiGenerated: true,
-          generatedAt: new Date(),
-          userLevel: req.user?.level || 1,
-          completedArticles: completedCount
-        }
-      });
-    }
-
-    await article.save();
-
-    // Create reading progress
-    const progress = new ReadingProgress({
-      userId,
-      articleId: article._id,
-      language,
-      status: 'not_started',
-      startedAt: new Date()
-    });
-
-    await progress.save();
-
-    res.json({
-      success: true,
-      article,
-      progress: {
-        status: 'not_started',
-        timeSpent: 0,
-        startedAt: new Date()
-      },
-      isNew: true,
-      isStarter: article.isStarterArticle
-    });
-
-  } catch (error: any) {
-    console.error('❌ Get current article error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get current article',
-      error: error.message
-    });
-  }
-};
-
-// Start reading an article
-export const startReading = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { articleId } = req.params;
-    const userId = req.user?.userId;
-
-    if (!userId) {
-      res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-      return;
-    }
-
-    const progress = await ReadingProgress.findOneAndUpdate(
-      { userId, articleId },
-      { status: 'reading', startedAt: new Date() },
-      { new: true }
-    );
-
-    if (!progress) {
-      res.status(404).json({
-        success: false,
-        message: 'Reading progress not found'
-      });
-      return;
-    }
-
-    res.json({
-      success: true,
-      message: 'Reading started',
+    const history = (await articleProgressWithDetails(req.user!.userId, language.data))
+      .filter(progress => progress.articleId);
+    const current = history.find(progress => openStatuses.includes(progress.status));
+    const completedArticles = history.filter(progress => progress.status === 'completed').map(progress => ({
+      article: progress.articleId,
       progress: {
         status: progress.status,
-        startedAt: progress.startedAt,
-        timeSpent: progress.timeSpent
+        timeSpent: progress.timeSpent,
+        completedAt: progress.completedAt,
+        quizScore: progress.quizScore,
+        quizAttempts: progress.quizAttempts
       }
+    }));
+
+    res.json({
+      success: true,
+      currentArticle: current ? {
+        article: current.articleId,
+        progress: { ...readingProgressDetails(current), quizScore: current.quizScore }
+      } : null,
+      completedArticles,
+      totalCompleted: completedArticles.length
     });
-  } catch (error: any) {
-    console.error('❌ Start reading error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to start reading'
-    });
+  } catch (error) {
+    console.error('Get user articles error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get articles' });
   }
 };
 
-// Complete article reading and submit quiz
-export const completeArticle = async (req: AuthRequest, res: Response): Promise<void> => {
+export const getArticleById = async (req: Request, res: Response): Promise<void> => {
+  const { articleId } = req.params;
+  if (!isObjectIdOrHexString(articleId)) {
+    res.status(400).json({ success: false, message: 'Invalid article ID' });
+    return;
+  }
+
   try {
-    const { articleId } = req.params;
-    const { answers, timeSpent = 0 } = req.body;
-    const userId = req.user?.userId;
-
-    if (!userId) {
-      res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-      return;
-    }
-
-    const article = await ReadingArticle.findById(articleId);
+    const userId = req.user!.userId;
+    const article = await ReadingArticle.findOne({ _id: articleId, ...visibleArticles(userId) });
     if (!article) {
-      res.status(404).json({
-        success: false,
-        message: 'Article not found'
-      });
+      res.status(404).json({ success: false, message: 'Article not found' });
       return;
     }
 
-    // Calculate quiz score
-    let correctAnswers = 0;
-    const totalQuestions = article.comprehensionQuestions.length;
-
-    answers.forEach((userAnswer: number, index: number) => {
-      if (article.comprehensionQuestions[index]?.correctAnswer === userAnswer) {
-        correctAnswers++;
-      }
-    });
-
-    const score = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 100;
-    const passed = score >= 70;
-
-    // Update reading progress - only mark completed if passed
-    if (passed) {
-      await ReadingProgress.findOneAndUpdate(
-        { userId, articleId },
-        {
-          status: 'completed',
-          completedAt: new Date(),
-          timeSpent: timeSpent,
-          quizScore: score,
-          quizAttempts: 1
-        }
-      );
-
-      // Update user stats
-      await updateReadingStats(userId, article.language, 'completed');
-    } else {
-      // If failed, just update the quiz score but keep status as reading
-      await ReadingProgress.findOneAndUpdate(
-        { userId, articleId },
-        {
-          timeSpent: timeSpent,
-          quizScore: score,
-          quizAttempts: 1
-        }
-      );
-    }
-
-    res.json({
-      success: true,
-      results: {
-        score,
-        correctAnswers,
-        totalQuestions,
-        passed,
-        timeSpent,
-        canGenerateNext: passed
-      },
-      message: passed ? 'Great job! You can now generate your next article!' : 'Keep practicing! Try again to unlock the next article.'
-    });
-  } catch (error: any) {
-    console.error('❌ Complete article error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to complete article'
-    });
+    const progress = await ReadingProgress.findOne({ userId, articleId });
+    res.json({ success: true, article, progress });
+  } catch (error) {
+    console.error('Get article error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get article' });
   }
 };
 
-// Generate next article (only after completing current one)
-export const generateNextArticle = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { language } = req.params;
-    const userId = req.user?.userId;
+async function assignArticle(userId: string, language: ReadingLanguage, completedArticles: number) {
+  const generationKey = `${userId.toLowerCase()}:${language}:${completedArticles}`;
+  let article = await ReadingArticle.findOne({ generationKey });
 
-    if (!userId) {
-      res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-      return;
-    }
-
-    // Check if user can generate next article (completed previous one)
-    const lastProgress = await ReadingProgress.findOne({
-      userId,
-      language
-    }).sort({ createdAt: -1 });
-
-    if (!lastProgress || lastProgress.status !== 'completed' || (lastProgress.quizScore || 0) < 70) {
-      res.status(400).json({
-        success: false,
-        message: 'Complete your current article with a passing score first'
-      });
-      return;
-    }
-
-    // Check if already has a new article
-    const existingProgress = await ReadingProgress.findOne({
-      userId,
-      language,
-      status: { $in: ['not_started', 'reading'] }
-    });
-
-    if (existingProgress) {
-      res.status(400).json({
-        success: false,
-        message: 'You already have an article in progress'
-      });
-      return;
-    }
-
-    // Generate next article
-    const completedCount = await ReadingProgress.countDocuments({
-      userId,
-      language,
-      status: 'completed'
-    });
-
-    const lastArticle = await ReadingProgress.findOne({
-      userId,
-      language,
-      status: 'completed'
-    }).sort({ completedAt: -1 }).populate('articleId');
-
-    const personalizedData = await AIArticleService.generatePersonalizedArticle({
-      language: language as 'spanish' | 'japanese',
-      userLevel: req.user?.level || 1,
-      completedArticles: completedCount,
-      lastTopic: (lastArticle?.articleId as any)?.topic
-    });
-
-    const article = new ReadingArticle({
-      ...personalizedData,
-      generatedFor: userId,
-      isStarterArticle: false,
-      generationMetadata: {
-        aiGenerated: true,
-        generatedAt: new Date(),
-        userLevel: req.user?.level || 1,
-        completedArticles: completedCount
-      }
-    });
-
-    await article.save();
-
-    // Create new progress
-    const progress = new ReadingProgress({
-      userId,
-      articleId: article._id,
-      language,
-      status: 'not_started',
-      startedAt: new Date()
-    });
-
-    await progress.save();
-
-    res.json({
-      success: true,
-      message: 'New personalized article generated!',
-      article,
-      progress: {
-        status: 'not_started',
-        timeSpent: 0,
-        startedAt: new Date()
-      }
-    });
-  } catch (error: any) {
-    console.error('❌ Generate next article error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to generate next article',
-      error: error.message
-    });
-  }
-};
-
-// Get user's reading statistics
-export const getReadingStats = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const { language } = req.params;
-    const userId = req.user?.userId;
-
-    if (!userId) {
-      res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-      return;
-    }
-
-    const totalCompleted = await ReadingProgress.countDocuments({
-      userId,
-      language,
-      status: 'completed'
-    });
-
-    const avgScore = await ReadingProgress.aggregate([
+  if (!article) {
+    if (!process.env.GEMINI_API_KEY?.trim()) return null;
+    await ReadingArticle.init();
+    const userStats = await UserStats.findOne({ userId }).select(`${language}.level`);
+    const userLevel = userStats?.[language]?.level || 1;
+    const articleData = await generateReadingArticle(language, userLevel, completedArticles);
+    if (!articleData) return null;
+    const { aiGenerated, ...content } = articleData;
+    const now = new Date();
+    article = await ReadingArticle.findOneAndUpdate(
+      { generationKey },
       {
-        $match: {
-          userId: new mongoose.Types.ObjectId(userId),
-          language,
-          status: 'completed'
+        $setOnInsert: {
+          ...content,
+          generatedFor: userId,
+          isStarterArticle: completedArticles === 0,
+          generationMetadata: { aiGenerated, generatedAt: now, userLevel, completedArticles },
+          createdAt: now,
+          updatedAt: now
         }
       },
-      {
-        $group: {
-          _id: null,
-          avgScore: { $avg: '$quizScore' },
-          totalTime: { $sum: '$timeSpent' }
-        }
-      }
-    ]);
+      { new: true, upsert: true, runValidators: true, timestamps: false }
+    );
+  }
 
-    const currentStreak = await calculateReadingStreak(userId, language);
+  if (!article) throw new Error('Article generation upsert returned no article');
+  // The saved article can be assigned on retry if writing its progress was interrupted.
+  await ReadingProgress.init();
+  const now = new Date();
+  const result = await ReadingProgress.findOneAndUpdate(
+    { userId, articleId: article._id },
+    { $setOnInsert: { language, status: 'not_started', startedAt: now, createdAt: now, updatedAt: now } },
+    { new: true, upsert: true, includeResultMetadata: true, runValidators: true, timestamps: false }
+  );
+
+  if (!result.value) throw new Error('Article assignment returned no progress');
+  return { article, progress: result.value, isNew: Boolean(result.lastErrorObject?.upserted) };
+}
+
+async function findOpenArticle(userId: string, language: ReadingLanguage) {
+  return (await articleProgressWithDetails(userId, language, true)).find(progress => progress.articleId);
+}
+
+export const getCurrentArticle = async (req: Request, res: Response): Promise<void> => {
+  const language = readingLanguage.safeParse(req.params.language);
+  if (!language.success) {
+    res.status(400).json({ success: false, message: 'Invalid reading language' });
+    return;
+  }
+
+  try {
+    const userId = req.user!.userId;
+    const current = await findOpenArticle(userId, language.data);
+    if (current) {
+      res.json({
+        success: true, article: current.articleId, progress: readingProgressDetails(current), isNew: false
+      });
+      return;
+    }
+
+    const completed = await ReadingProgress.countDocuments({ userId, language: language.data, status: 'completed' });
+    const assignment = await assignArticle(userId, language.data, completed);
+    if (!assignment) {
+      res.set('Retry-After', '15').status(503).json({ success: false, message: 'New readings are temporarily unavailable. Try again in a moment.' });
+      return;
+    }
+    if (assignment.progress.status === 'completed') {
+      res.status(409).json({ success: false, message: 'Reading progress changed. Refresh to see your current article.' });
+      return;
+    }
 
     res.json({
       success: true,
-      stats: {
-        totalCompleted,
-        averageScore: avgScore[0]?.avgScore ? Math.round(avgScore[0].avgScore) : 0,
-        totalTimeSpent: Math.round((avgScore[0]?.totalTime || 0) / 60), // minutes
-        currentStreak,
-        language
-      }
+      article: assignment.article,
+      progress: readingProgressDetails(assignment.progress),
+      isNew: assignment.isNew,
+      isStarter: assignment.article.isStarterArticle
     });
-  } catch (error: any) {
-    console.error('❌ Get reading stats error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get reading statistics'
-    });
+  } catch (error) {
+    console.error('Get current article error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get current article' });
   }
 };
 
-// Helper functions
-async function updateReadingStats(userId: string, language: string, action: string) {
+export const startReading = async (req: Request, res: Response): Promise<void> => {
+  const { articleId } = req.params;
+  if (!isObjectIdOrHexString(articleId)) {
+    res.status(400).json({ success: false, message: 'Invalid article ID' });
+    return;
+  }
+
   try {
-    const userStats = await UserStats.findOne({ userId });
-    if (userStats && userStats[language as keyof typeof userStats]) {
-      const langStats = userStats[language as keyof typeof userStats] as any;
-      if (langStats.studyMore) {
-        langStats.studyMore.articlesCompleted = (langStats.studyMore.articlesCompleted || 0) + 1;
-        await userStats.save();
-      }
+    const userId = req.user!.userId;
+    const key = { userId, articleId };
+    const progress = await ReadingProgress.findOneAndUpdate(
+      { ...key, status: { $in: ['not_started', null] } },
+      { $set: { status: 'reading', startedAt: new Date() } },
+      { new: true }
+    ) ?? await ReadingProgress.findOne(key);
+
+    if (!progress) {
+      res.status(404).json({ success: false, message: 'Reading progress not found' });
+      return;
     }
+
+    res.json({ success: true, message: 'Reading started', progress: readingProgressDetails(progress) });
+  } catch (error) {
+    console.error('Start reading error:', error);
+    res.status(500).json({ success: false, message: 'Failed to start reading' });
+  }
+};
+
+async function syncCompletedArticles(userId: string, language: ReadingLanguage) {
+  try {
+    const completed = await ReadingProgress.countDocuments({ userId, language, status: 'completed' });
+    await UserStats.updateOne(
+      { userId },
+      { $max: { [`${language}.studyMore.articlesCompleted`]: completed } },
+      { upsert: true }
+    );
   } catch (error) {
     console.error('Error updating reading stats:', error);
   }
 }
 
-async function calculateReadingStreak(userId: string, language: string): Promise<number> {
-  const recentProgress = await ReadingProgress.find({
-    userId,
-    language,
-    status: 'completed'
-  }).sort({ completedAt: -1 }).limit(10);
-
-  let streak = 0;
-  let lastDate: Date | null = null;
-
-  for (const progress of recentProgress) {
-    if (!progress.completedAt) continue;
-    
-    const currentDate = new Date(progress.completedAt);
-    currentDate.setHours(0, 0, 0, 0);
-
-    if (!lastDate) {
-      streak = 1;
-      lastDate = currentDate;
-    } else {
-      const daysDiff = Math.floor((lastDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
-      if (daysDiff === 1) {
-        streak++;
-        lastDate = currentDate;
-      } else {
-        break;
-      }
-    }
+export const completeArticle = async (req: Request, res: Response): Promise<void> => {
+  const { articleId } = req.params;
+  if (!isObjectIdOrHexString(articleId)) {
+    res.status(400).json({ success: false, message: 'Invalid article ID' });
+    return;
   }
 
-  return streak;
-}
+  const parsed = quizInput.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ success: false, message: 'Invalid quiz answers or reading time' });
+    return;
+  }
+
+  try {
+    const userId = req.user!.userId;
+    const article = await ReadingArticle.findOne({ _id: articleId, ...visibleArticles(userId) });
+    if (!article) {
+      res.status(404).json({ success: false, message: 'Article not found' });
+      return;
+    }
+
+    const { answers, timeSpent } = parsed.data;
+    const questions = article.comprehensionQuestions ?? [];
+    const totalQuestions = questions.length;
+    if (answers.length !== totalQuestions || answers.some((answer, index) => answer >= (questions[index]?.options?.length ?? 0))) {
+      res.status(400).json({ success: false, message: 'Answer each quiz question with a valid option' });
+      return;
+    }
+
+    const correctAnswers = answers.filter((answer, index) => questions[index].correctAnswer === answer).length;
+    const score = totalQuestions ? Math.round((correctAnswers / totalQuestions) * 100) : 100;
+    const passed = score >= passingScore;
+    const key = { userId, articleId };
+    const progress = await ReadingProgress.findOneAndUpdate(
+      { ...key, status: { $ne: 'completed' } },
+      {
+        $set: {
+          status: passed ? 'completed' : 'reading',
+          timeSpent,
+          quizScore: score,
+          quizCorrectAnswers: correctAnswers,
+          ...(passed && { completedAt: new Date() })
+        },
+        $inc: { quizAttempts: 1 }
+      },
+      { new: true }
+    ) ?? await ReadingProgress.findOne(key);
+
+    if (!progress) {
+      res.status(404).json({ success: false, message: 'Reading progress not found' });
+      return;
+    }
+
+    const completed = progress.status === 'completed';
+    if (completed) await syncCompletedArticles(userId, progress.language);
+
+    res.json({
+      success: true,
+      results: {
+        score: progress.quizScore,
+        correctAnswers: progress.quizCorrectAnswers ?? Math.round(progress.quizScore * totalQuestions / 100),
+        totalQuestions,
+        passed: completed,
+        timeSpent: progress.timeSpent,
+        canGenerateNext: completed
+      },
+      message: completed ? 'Great job! You can now generate your next article!' : 'Keep practicing! Try again to unlock the next article.'
+    });
+  } catch (error) {
+    console.error('Complete article error:', error);
+    res.status(500).json({ success: false, message: 'Failed to complete article' });
+  }
+};
+
+export const generateNextArticle = async (req: Request, res: Response): Promise<void> => {
+  const language = readingLanguage.safeParse(req.params.language);
+  if (!language.success) {
+    res.status(400).json({ success: false, message: 'Invalid reading language' });
+    return;
+  }
+
+  try {
+    const userId = req.user!.userId;
+    if (await findOpenArticle(userId, language.data)) {
+      res.status(400).json({ success: false, message: 'You already have an article in progress' });
+      return;
+    }
+
+    const filter = { userId, language: language.data, status: 'completed' };
+    const lastCompleted = await ReadingProgress.findOne(filter).sort({ createdAt: -1, _id: -1 });
+    if (!lastCompleted || (lastCompleted.quizScore || 0) < passingScore) {
+      res.status(400).json({ success: false, message: 'Complete your current article with a passing score first' });
+      return;
+    }
+
+    const completed = await ReadingProgress.countDocuments(filter);
+    const assignment = await assignArticle(userId, language.data, completed);
+    if (!assignment) {
+      res.set('Retry-After', '15').status(503).json({ success: false, message: 'New readings are temporarily unavailable. Try again in a moment.' });
+      return;
+    }
+    if (assignment.progress.status === 'completed') {
+      res.status(409).json({ success: false, message: 'Reading progress changed. Refresh to see your current article.' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      message: 'New personalized article generated!',
+      article: assignment.article,
+      progress: readingProgressDetails(assignment.progress)
+    });
+  } catch (error) {
+    console.error('Generate next article error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate next article' });
+  }
+};
+
+export const getReadingStats = async (req: Request, res: Response): Promise<void> => {
+  const language = readingLanguage.safeParse(req.params.language);
+  if (!language.success) {
+    res.status(400).json({ success: false, message: 'Invalid reading language' });
+    return;
+  }
+
+  try {
+    const match = { userId: new Types.ObjectId(req.user!.userId), language: language.data, status: 'completed' };
+    const [[totals], completed] = await Promise.all([
+      ReadingProgress.aggregate<{ count: number; averageScore: number | null; totalTime: number }>([
+        { $match: match },
+        { $group: { _id: null, count: { $sum: 1 }, averageScore: { $avg: '$quizScore' }, totalTime: { $sum: '$timeSpent' } } }
+      ]),
+      ReadingProgress.find(match).select('completedAt').sort({ completedAt: -1 }).lean()
+    ]);
+
+    res.json({
+      success: true,
+      stats: {
+        totalCompleted: totals?.count ?? 0,
+        averageScore: Math.round(totals?.averageScore ?? 0),
+        totalTimeSpent: Math.round((totals?.totalTime ?? 0) / 60),
+        currentStreak: countConsecutiveCompletionDays(completed),
+        language: language.data
+      }
+    });
+  } catch (error) {
+    console.error('Get reading stats error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get reading statistics' });
+  }
+};

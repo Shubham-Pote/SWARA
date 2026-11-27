@@ -1,10 +1,13 @@
 import mongoose from 'mongoose';
 
+export const READING_LANGUAGES = ['spanish', 'japanese'] as const;
+export const READING_CONTENT_TYPES = ['mini-stories', 'local-news', 'dialogue-reads', 'idioms-action', 'global-comparison'] as const;
+
 export interface IReadingArticle extends mongoose.Document {
   title: string;
-  language: 'spanish' | 'japanese';
+  language: typeof READING_LANGUAGES[number];
   difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
-  contentType: 'mini-stories' | 'local-news' | 'dialogue-reads' | 'idioms-action' | 'global-comparison';
+  contentType: typeof READING_CONTENT_TYPES[number];
   topic: string;
   content: string;
   contentWithTranslations: Array<{
@@ -53,6 +56,7 @@ export interface IReadingArticle extends mongoose.Document {
   
   // Generation metadata
   generatedFor?: mongoose.Types.ObjectId;
+  generationKey?: string;
   isStarterArticle: boolean;
   generationMetadata: {
     aiGenerated: boolean;
@@ -72,7 +76,7 @@ const readingArticleSchema = new mongoose.Schema({
   },
   language: {
     type: String,
-    enum: ['spanish', 'japanese'],
+    enum: READING_LANGUAGES,
     required: true
   },
   difficulty: {
@@ -82,7 +86,7 @@ const readingArticleSchema = new mongoose.Schema({
   },
   contentType: {
     type: String,
-    enum: ['mini-stories', 'local-news', 'dialogue-reads', 'idioms-action', 'global-comparison'],
+    enum: READING_CONTENT_TYPES,
     required: true
   },
   topic: {
@@ -161,6 +165,10 @@ const readingArticleSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  generationKey: {
+    type: String,
+    select: false
+  },
   isStarterArticle: {
     type: Boolean,
     default: false
@@ -188,5 +196,6 @@ const readingArticleSchema = new mongoose.Schema({
 readingArticleSchema.index({ language: 1, difficulty: 1 });
 readingArticleSchema.index({ generatedFor: 1, createdAt: -1 });
 readingArticleSchema.index({ isStarterArticle: 1, language: 1 });
+readingArticleSchema.index({ generationKey: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model<IReadingArticle>('ReadingArticle', readingArticleSchema);

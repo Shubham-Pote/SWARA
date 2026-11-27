@@ -13,7 +13,6 @@ export interface ILesson extends mongoose.Document {
   steps: IStep[];
   culturalNotes?: string;
   isActive: boolean;
-  // Add timestamp properties
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -113,13 +112,8 @@ const lessonSchema = new mongoose.Schema({
   }],
   culturalNotes: String,
   isActive: { type: Boolean, default: true }
-}, { 
-  timestamps: true,
-  indexes: [
-    { language: 1, difficulty: 1 },
-    { language: 1, level: 1 },
-    { isActive: 1 }
-  ]
-});
+}, { timestamps: true });
+
+lessonSchema.index({ language: 1, isActive: 1, order: 1, level: 1 });
 
 export default mongoose.model<ILesson>('Lesson', lessonSchema);
