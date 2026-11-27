@@ -1,362 +1,70 @@
-# SWARA - AI Language Learning Platform
+# SWARA
 
-<div align="center">
+SWARA is a practice workspace for learners of Spanish and Japanese. Read a short passage, save useful words, and bring what you learned into a conversation with María or Akira.
 
-![SWARA Logo](https://img.shields.io/badge/SWARA-Language%20Learning-blue?style=for-the-badge)
+| Area | What you can do |
+| --- | --- |
+| Dashboard | Choose a practice language, see recent activity and streaks, and reopen completed readings. |
+| Reading Desk | Read with optional English translations, look up words, check comprehension, and take a passage into Companion. |
+| Notebook | Write and autosave notes, keep vocabulary from readings, and review starred notes or vocabulary. |
+| Companion | Chat with an animated VRM tutor. Sign in to save exchanges. Tutor voice is optional, and dictation depends on browser support. |
 
-**Learn Spanish and Japanese through AI-powered 3D character conversations**
+## Local development
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/Node.js-20.x-green.svg)](https://nodejs.org/)
-[![React](https://img.shields.io/badge/React-19.x-blue.svg)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
+Install [Bun](https://bun.com/docs/installation) (CI uses 1.3.14), [Node.js](https://nodejs.org/) 22 with npm, and MongoDB 7 or a compatible Atlas deployment. Run each block from the repository root in a separate terminal.
 
-[Live Demo](https://swara-lemon.vercel.app) · [Report Bug](https://github.com/Shubham-Pote/SWARA/issues) · [Request Feature](https://github.com/Shubham-Pote/SWARA/issues)
+**API**
 
-</div>
-
----
-
-## 🌟 What is SWARA?
-
-SWARA is an immersive AI-powered language learning platform that combines conversational AI with 3D animated characters to create an engaging, interactive experience for learning Spanish and Japanese. Chat with María González from Mexico City or Akira Tanaka from Tokyo, each with their own personality, teaching style, and realistic VRM-based 3D avatars.
-
-### ✨ Key Features
-
-- **🎭 AI-Powered 3D Characters**
-  - María González - Warm Spanish teacher with Mexican cultural insights
-  - Akira Tanaka - Respectful Japanese instructor with business language expertise
-  - Realistic facial expressions and lip-sync animations using VRM models
-  - Real-time emotion detection and response
-
-- **💬 Real-Time Conversations**
-  - WebSocket-based instant messaging with AI characters
-  - Streaming responses for natural conversation flow
-  - Multi-language support (English, Spanish, Japanese)
-  - Automatic language detection and mixing
-
-- **🎯 Structured Learning**
-  - Progressive lesson system with vocabulary, grammar, and culture
-  - AI-generated personalized content using Google Gemini
-  - Interactive exercises and practice scenarios
-  - Reading articles with comprehension tracking
-
-- **🔊 Voice & Audio**
-  - Text-to-speech using OpenAI and ElevenLabs
-  - Character-specific voice profiles
-  - Audio lessons and pronunciation guides
-  - Lip-sync animation with phoneme mapping
-
-- **📊 Progress Tracking**
-  - XP and leveling system
-  - Learning streaks and achievements
-  - Session analytics and performance metrics
-  - Personalized learning paths
-
-- **🌍 Cultural Context**
-  - Region-specific language variations
-  - Cultural notes and explanations
-  - Slang and informal expressions
-  - Politeness levels and formality
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Node.js** 20.x or higher
-- **MongoDB** database (local or MongoDB Atlas)
-- **API Keys**:
-  - Google Gemini API key
-  - OpenAI API key
-  - ElevenLabs API key (optional)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/Shubham-Pote/SWARA.git
-   cd SWARA
-   ```
-
-2. **Backend Setup**
-   ```bash
-   cd backend
-   npm install
-   
-   # Create .env file
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
-
-   Configure your `.env` file:
-   ```env
-   PORT=5000
-   MONGODB_URI=mongodb://localhost:27017/language-learning
-   JWT_SECRET=your-secret-key
-   GEMINI_API_KEY=your-gemini-api-key
-   OPENAI_API_KEY=your-openai-api-key
-   ELEVENLABS_API_KEY=your-elevenlabs-api-key
-   CORS_ORIGIN=http://localhost:5173
-   ```
-
-3. **Frontend Setup**
-   ```bash
-   cd ../Frontend
-   npm install
-   
-   # Create .env.development file
-   echo "VITE_API_BASE_URL=http://localhost:5000" > .env.development
-   echo "VITE_BACKEND_URL=http://localhost:5000" >> .env.development
-   ```
-
-4. **Start Development Servers**
-
-   Terminal 1 (Backend):
-   ```bash
-   cd backend
-   npm run dev
-   ```
-
-   Terminal 2 (Frontend):
-   ```bash
-   cd Frontend
-   npm run dev
-   ```
-
-5. **Access the Application**
-   - Frontend: http://localhost:5173
-   - Backend API: http://localhost:5000
-
-### Usage Example
-
-```typescript
-// Chat with an AI character
-import { characterSocketService } from '@/services/characterSocket.service';
-
-// Connect to character
-characterSocketService.startConversation('maria', userId);
-
-// Send message
-characterSocketService.sendMessage('Hola! ¿Cómo estás?');
-
-// Listen for responses
-characterSocketService.on('character_response', (data) => {
-  console.log('Character says:', data.text);
-  console.log('Emotion:', data.emotion);
-  console.log('Animation:', data.animation);
-});
+```sh
+cd backend
+npm ci
+cp .env.example .env
+node -p "require('node:crypto').randomBytes(32).toString('hex')"
 ```
 
----
+On PowerShell, use `Copy-Item .env.example .env`. Put the generated value in `JWT_SECRET` in `backend/.env` and start MongoDB, or set `MONGODB_URI` for an existing development instance. Then run `npm run dev` in `backend/`.
 
-## 🏗️ Project Structure
+**Client**
 
-```
-SWARA/
-├── backend/                  # Node.js + Express backend
-│   ├── api/                 # Vercel serverless functions
-│   ├── src/
-│   │   ├── controllers/     # Route controllers
-│   │   ├── models/          # MongoDB schemas
-│   │   ├── routes/          # API routes
-│   │   ├── services/        # Business logic
-│   │   │   ├── characterAI.service.ts      # AI conversation logic
-│   │   │   ├── vrmAnimation.service.ts     # 3D animation control
-│   │   │   ├── gemini.service.ts           # Google Gemini integration
-│   │   │   ├── emotionAnalysis.service.ts  # Emotion detection
-│   │   │   └── translation.service.ts      # Multi-language support
-│   │   ├── websocket/       # WebSocket handlers
-│   │   └── utils/           # Helper functions
-│   └── public/audio/        # Audio lesson files
-│
-├── Frontend/                 # React + Vite frontend
-│   ├── src/
-│   │   ├── components/      # Reusable UI components
-│   │   │   ├── VRMViewer.tsx          # 3D character renderer
-│   │   │   ├── auth-fuse.tsx          # Authentication UI
-│   │   │   └── ui/                    # Shadcn UI components
-│   │   ├── pages/           # Page components
-│   │   │   ├── CharacterChat.tsx      # AI chat interface
-│   │   │   ├── Lessons.tsx            # Lesson browser
-│   │   │   └── Dashboard.tsx          # User dashboard
-│   │   ├── services/        # API clients
-│   │   │   └── characterSocket.service.ts  # WebSocket client
-│   │   ├── contexts/        # React contexts
-│   │   └── lib/             # Utilities
-│   └── public/models/       # VRM 3D models
-│
-└── README.md
+```sh
+cd Client
+bun install --frozen-lockfile
+bun run dev
 ```
 
----
+Open <http://localhost:3000>. The Bun server proxies the app’s API requests to <http://127.0.0.1:5000> by default. The [Client environment template](Client/.env.example) shows how to override the proxy origin or port. You only need a Client `.env` to change a default.
 
-## 🛠️ Tech Stack
+Add `GEMINI_API_KEY` to [the backend environment](backend/.env.example) for AI conversation and newly generated content. Use the ElevenLabs variables to enable tutor voice. Account, notebook, and progress features use MongoDB. Browser dictation needs microphone access on HTTPS or localhost.
 
-### Backend
-- **Runtime**: Node.js 20.x with TypeScript
-- **Framework**: Express.js
-- **Database**: MongoDB with Mongoose ODM
-- **Real-time**: Socket.IO for WebSocket connections
-- **AI/ML**:
-  - Google Generative AI (Gemini 2.0)
-  - Sentiment analysis for emotion detection
-  - Franc for language detection
-- **Authentication**: JWT with bcrypt
-- **Voice**: OpenAI TTS, ElevenLabs (optional)
+## Architecture
 
-### Frontend
-- **Framework**: React 19 with TypeScript
-- **Build Tool**: Vite
-- **3D Graphics**: Three.js with @pixiv/three-vrm
-- **UI Library**: Radix UI + Tailwind CSS
-- **Animations**: Framer Motion, GSAP
-- **State Management**: React Context + Tanstack Query
-- **Routing**: React Router v7
+- [`Client/`](Client) is the Bun and React application. It uses TypeScript, Tailwind CSS, Motion, GSAP, and Anime.js. Three.js and the Pixiv VRM library render the companions.
+- [`backend/`](backend) is the Node.js and Express API backed by MongoDB and Mongoose. It serves authenticated practice data and streams conversation replies over HTTP using server-sent events. Gemini generates the replies and ElevenLabs supplies optional speech. Provider keys stay on the API server.
+- [`Client/Characters/`](Client/Characters) contains the two VRM models served by the Bun server and copied into the static build.
+- [`.agents/Specs/`](.agents/Specs) records design decisions and past verification. Browser captures referenced there are kept as local QA artifacts.
 
-### DevOps
-- **Deployment**: Vercel (serverless functions)
-- **Version Control**: Git + GitHub
-- **Package Manager**: npm
+## Checks
 
----
+| Directory | Commands |
+| --- | --- |
+| `Client/` | `bun run typecheck` · `bun test` · `bun run build` |
+| `backend/` | `npm run typecheck` · `npm run build` · `npm test` |
 
-## 📚 API Documentation
+For the full backend suite, start a **disposable local MongoDB** instance and set `SWARA_TEST_MONGO_URI` to its loopback URI before running `npm test`. The tests create and remove temporary databases. The MongoDB suites skip if the variable is unset, and the tests simulate external providers.
 
-### REST Endpoints
-
-#### Authentication
-```typescript
-POST /api/auth/register        # Create new user account
-POST /api/auth/login           # User login
-GET  /api/auth/profile         # Get user profile
-PUT  /api/auth/profile         # Update profile
-PUT  /api/auth/language        # Switch learning language
+```sh
+SWARA_TEST_MONGO_URI=mongodb://127.0.0.1:27017 npm test
 ```
 
-#### Lessons
-```typescript
-GET  /api/lessons/:language    # Get lessons by language
-GET  /api/lessons/:id          # Get specific lesson
-POST /api/lessons/:id/complete # Mark lesson complete
-GET  /api/lessons/:id/progress # Get lesson progress
+```powershell
+$env:SWARA_TEST_MONGO_URI = 'mongodb://127.0.0.1:27017'
+npm test
 ```
 
-#### Notes & Reading
-```typescript
-GET  /api/notes                # Get user notes
-POST /api/notes                # Create note
-GET  /api/reading              # Get reading articles
-POST /api/reading/generate     # AI-generate article
-```
+## Project guides
 
-### WebSocket Events
+- [Deployment](docs/deployment.md) covers static hosting, the Bun server, and the Express API.
+- [Contributing](CONTRIBUTING.md) explains how to prepare and verify a change.
+- [Security](SECURITY.md) describes private reporting and credential handling.
 
-#### Character Namespace (`/character`)
-```typescript
-// Client → Server
-'start_conversation'     # Begin character session
-'send_message'           # Send chat message
-'end_conversation'       # End session
-
-// Server → Client
-'character_response'     # AI response text
-'character_audio_chunk'  # Audio stream chunk
-'vrm_animation'          # Animation commands
-'typing_indicator'       # Character is typing
-'connection_status'      # Connection state
-```
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! Here's how you can help:
-
-1. **Fork the repository**
-2. **Create a feature branch** (`git checkout -b feature/AmazingFeature`)
-3. **Commit your changes** (`git commit -m 'Add some AmazingFeature'`)
-4. **Push to the branch** (`git push origin feature/AmazingFeature`)
-5. **Open a Pull Request**
-
-### Development Guidelines
-
-- Follow TypeScript best practices
-- Write meaningful commit messages
-- Add tests for new features
-- Update documentation as needed
-- Ensure code passes linting (`npm run lint`)
-
----
-
-## 📖 Documentation
-
-- **API Reference**: See inline code documentation
-- **Character Development**: Check `backend/src/services/characterAI.service.ts`
-- **VRM Integration**: See `Frontend/src/components/VRMViewer.tsx`
-- **WebSocket Protocol**: Documented in `backend/src/websocket/`
-
----
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**WebSockets not connecting**
-- Verify backend URL in frontend `.env`
-- Check CORS settings in backend
-- Ensure WebSocket ports are not blocked
-
-**3D Models not loading**
-- Check VRM model paths in `public/models/`
-- Verify model file format (.vrm)
-- Check browser console for WebGL errors
-
-**API requests failing**
-- Confirm MongoDB connection
-- Verify API keys in backend `.env`
-- Check network tab for error details
-
-For more help, [open an issue](https://github.com/Shubham-Pote/SWARA/issues).
-
----
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 👥 Maintainers
-
-- **Shubham Pote** - [@Shubham-Pote](https://github.com/Shubham-Pote)
-
----
-
-## 🙏 Acknowledgments
-
-- **Google Generative AI** for Gemini API
-- **OpenAI** for GPT and TTS capabilities
-- **Pixiv** for VRM SDK
-- **Three.js** community
-- **Shadcn UI** for component library
-- All contributors and testers
-
----
-
-## 📞 Support
-
-- 📧 Email: [Create an issue](https://github.com/Shubham-Pote/SWARA/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/Shubham-Pote/SWARA/discussions)
-- 🐦 Twitter: Follow for updates
-
----
-
-<div align="center">
-
-**[⬆ Back to Top](#swara---ai-language-learning-platform)**
-
-Made with ❤️ for language learners worldwide
-
-</div>
+The repository currently has no top-level license file. Confirm redistribution terms with the maintainer before reusing code or artwork.

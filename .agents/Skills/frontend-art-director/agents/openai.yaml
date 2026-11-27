@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frontend Art Director"
+  short_description: "Research, creatively design, build and validate original, clean web frontends"
+  default_prompt: "Use $frontend-art-director in RESCUE mode. Audit the product, research 3-5 genuine same-purpose reference sites, investigate the current full capabilities and galleries of installed/available GSAP, React Bits, shadcn, 21st.dev and Taste Skill, compare best candidates for signature interfaces, build an original cohesive design, preserve all features, implement clean typed React and accessible responsive behavior, iterate based on real browser screenshots, and run meaningful checks. Make independent design decisions; do not artificially limit tools to one narrow purpose."
